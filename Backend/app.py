@@ -6,7 +6,10 @@ from datetime import datetime
 from faster_whisper import WhisperModel
 
 app = Flask(__name__)
-app = Flask(__name__)
+
+# --------------------------------------------------
+# CORS
+# --------------------------------------------------
 
 @app.after_request
 def add_cors_headers(response):
@@ -14,12 +17,36 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return response
+
+
+# --------------------------------------------------
+# UPLOAD FOLDER
+# --------------------------------------------------
+
 UPLOAD_FOLDER = "uploads"
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Whisper AI model
-model = WhisperModel("base", device="cpu", compute_type="int8")
+
+# --------------------------------------------------
+# WHISPER AI MODEL
+# Loaded only when needed
+# --------------------------------------------------
+
+model = None
+
+
+def get_model():
+    global model
+
+    if model is None:
+        model = WhisperModel(
+            "base",
+            device="cpu",
+            compute_type="int8"
+        )
+
+    return model
 
 
 # --------------------------------------------------
@@ -100,7 +127,11 @@ def meeting():
 
         # Summary
         sentences = re.split(r"[.!?]+", transcript)
-        sentences = [s.strip() for s in sentences if s.strip()]
+        sentences = [
+            s.strip()
+            for s in sentences
+            if s.strip()
+        ]
 
         summary = ". ".join(sentences[:3])
 
@@ -164,7 +195,10 @@ def meeting():
 
             sentence_lower = sentence.lower()
 
-            if not any(word in sentence_lower for word in action_words):
+            if not any(
+                word in sentence_lower
+                for word in action_words
+            ):
                 continue
 
             # Owner
@@ -210,20 +244,26 @@ def meeting():
                         deadline = month_match.group(0).title()
 
             # Priority
-            if any(word in sentence_lower for word in [
-                "urgent",
-                "critical",
-                "high priority",
-                "important",
-                "asap"
-            ]):
+            if any(
+                word in sentence_lower
+                for word in [
+                    "urgent",
+                    "critical",
+                    "high priority",
+                    "important",
+                    "asap"
+                ]
+            ):
                 priority = "High"
 
-            elif any(word in sentence_lower for word in [
-                "medium",
-                "soon",
-                "this week"
-            ]):
+            elif any(
+                word in sentence_lower
+                for word in [
+                    "medium",
+                    "soon",
+                    "this week"
+                ]
+            ):
                 priority = "Medium"
 
             else:
@@ -426,7 +466,12 @@ def upload_audio():
 
     try:
 
-        segments, info = model.transcribe(filepath)
+        # Load Whisper only when needed
+        whisper_model = get_model()
+
+        segments, info = whisper_model.transcribe(
+            filepath
+        )
 
         transcript = " ".join(
             segment.text.strip()
@@ -471,8 +516,16 @@ def analyze():
 
     try:
 
-        # Speech to text
-        segments, info = model.transcribe(filepath)
+        # ------------------------------------------
+        # Speech to Text
+        # ------------------------------------------
+
+        whisper_model = get_model()
+
+        segments, info = whisper_model.transcribe(
+            filepath,
+            beam_size=5
+        )
 
         transcript = " ".join(
             segment.text.strip()
@@ -482,7 +535,10 @@ def analyze():
         if not transcript:
             transcript = "No speech detected."
 
+        # ------------------------------------------
         # Split transcript
+        # ------------------------------------------
+
         sentences = re.split(
             r"[.!?]+",
             transcript
@@ -494,7 +550,10 @@ def analyze():
             if s.strip()
         ]
 
+        # ------------------------------------------
         # Action words
+        # ------------------------------------------
+
         action_words = [
             "complete",
             "prepare",
@@ -519,7 +578,10 @@ def analyze():
             "discuss"
         ]
 
+        # ------------------------------------------
         # Known people
+        # ------------------------------------------
+
         known_people = [
             "Dharshan",
             "Arun",
@@ -533,7 +595,10 @@ def analyze():
 
         tasks = []
 
+        # ------------------------------------------
         # Extract task information
+        # ------------------------------------------
+
         for sentence in sentences:
 
             sentence_lower = sentence.lower()
@@ -545,7 +610,10 @@ def analyze():
             ):
                 continue
 
+            # --------------------------------------
             # Person
+            # --------------------------------------
+
             owner = "Unassigned"
 
             for person in known_people:
@@ -554,7 +622,10 @@ def analyze():
                     owner = person
                     break
 
+            # --------------------------------------
             # Deadline
+            # --------------------------------------
+
             deadline = "Not specified"
 
             if "tomorrow" in sentence_lower:
@@ -593,7 +664,10 @@ def analyze():
 
                         deadline = month_match.group(0).title()
 
+            # --------------------------------------
             # Priority
+            # --------------------------------------
+
             if any(
                 word in sentence_lower
                 for word in [
@@ -622,6 +696,10 @@ def analyze():
 
                 priority = "Low"
 
+            # --------------------------------------
+            # Add task
+            # --------------------------------------
+
             tasks.append({
                 "person": owner,
                 "task": sentence,
@@ -629,7 +707,10 @@ def analyze():
                 "priority": priority
             })
 
+        # ------------------------------------------
         # Return result to frontend
+        # ------------------------------------------
+
         return {
             "result": transcript,
             "language": info.language,

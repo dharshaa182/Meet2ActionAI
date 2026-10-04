@@ -22,7 +22,7 @@ async function analyzeMeeting() {
         formData.append("file", file);
 
         const response = await fetch(
-            "http://127.0.0.1:5001/analyze",
+            "http://meet2actionai.onrender.com/analyze",
             {
                 method: "POST",
                 body: formData
