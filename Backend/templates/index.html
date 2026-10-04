@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Meet2Action - AI Meeting Accountability</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f7fb;
+            color: #111;
+        }
+
+        .navbar {
+            background: #111;
+            color: white;
+            padding: 18px 8%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .nav a {
+            color: white;
+            text-decoration: none;
+            margin-left: 20px;
+        }
+
+        .hero {
+            text-align: center;
+            padding: 75px 20px 55px;
+        }
+
+        .hero h1 {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .hero span {
+            color: #555;
+        }
+
+        .hero p {
+            font-size: 18px;
+            color: #666;
+            max-width: 650px;
+            margin: auto;
+            line-height: 1.6;
+        }
+
+        .buttons {
+            margin-top: 30px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 14px 25px;
+            margin: 8px;
+            border-radius: 9px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .primary {
+            background: #111;
+            color: white;
+        }
+
+        .secondary {
+            background: white;
+            color: #111;
+            border: 1px solid #ddd;
+        }
+
+        .features {
+            max-width: 1000px;
+            margin: auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 14px;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.08);
+        }
+
+        .card h3 {
+            margin-top: 0;
+        }
+
+        .card p {
+            color: #666;
+            line-height: 1.5;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 60px;
+            padding: 25px;
+            color: #777;
+        }
+
+        @media (max-width: 700px) {
+            .features {
+                grid-template-columns: 1fr;
+            }
+
+            .hero h1 {
+                font-size: 36px;
+            }
+
+            .nav a {
+                margin-left: 8px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="navbar">
+        <div class="logo">Meet2Action</div>
+
+        <div class="nav">
+            <a href="/dashboard">Dashboard</a>
+            <a href="/history">History</a>
+            <a href="/notifications">🔔</a>
+        </div>
+    </div>
+
+
+    <section class="hero">
+
+        <h1>
+            Turn Meetings Into <span>Action</span>
+        </h1>
+
+        <p>
+            Meet2Action uses AI-powered meeting transcription
+            and analysis to convert conversations into
+            actionable tasks, responsibilities, deadlines,
+            and priorities.
+        </p>
+
+        <div class="buttons">
+
+            <a class="btn primary" href="/upload_audio">
+                🎙️ Upload Meeting Audio
+            </a>
+
+            <a class="btn secondary" href="/meeting">
+                📝 Enter Meeting Notes
+            </a>
+
+        </div>
+
+    </section>
+
+
+    <section class="features">
+
+        <div class="card">
+            <h3>🎙️ Smart Transcription</h3>
+            <p>
+                Convert meeting audio into text automatically
+                using local AI transcription.
+            </p>
+        </div>
+
+        <div class="card">
+            <h3>🤖 Meeting Analysis</h3>
+            <p>
+                Extract action items, responsibilities,
+                deadlines and priorities from meetings.
+            </p>
+        </div>
+
+        <div class="card">
+            <h3>📊 Accountability Dashboard</h3>
+            <p>
+                Track pending, completed and overdue tasks
+                in one simple dashboard.
+            </p>
+        </div>
+
+        <div class="card">
+            <h3>👤 Responsibility</h3>
+            <p>
+                Identify who is responsible for each
+                action item from the meeting context.
+            </p>
+        </div>
+
+        <div class="card">
+            <h3>📅 Deadline Tracking</h3>
+            <p>
+                Detect deadlines and monitor tasks
+                that need attention.
+            </p>
+        </div>
+
+        <div class="card">
+            <h3>🔔 Notifications</h3>
+            <p>
+                View pending and overdue tasks through
+                the notification system.
+            </p>
+        </div>
+
+    </section>
+
+
+    <div class="footer">
+        Meet2Action — AI Meeting-to-Accountability System
+    </div>
+
+</body>
+</html>

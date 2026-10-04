@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Meeting Transcription - Meet2Action</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 40px;
+        }
+
+        .container {
+            max-width: 750px;
+            margin: auto;
+            background: white;
+            padding: 35px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .success {
+            background: #e8f7e8;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .label {
+            font-weight: bold;
+            margin-top: 20px;
+            display: block;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 220px;
+            margin-top: 10px;
+            padding: 15px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            font-size: 15px;
+            line-height: 1.6;
+            resize: vertical;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 13px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            margin-top: 8px;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 13px 25px;
+            background: #111;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background: #333;
+        }
+
+        .back {
+            display: block;
+            margin-top: 20px;
+            text-align: center;
+            color: #333;
+            text-decoration: none;
+        }
+
+        .info {
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🎙️ Meeting Transcription</h1>
+
+    <div class="success">
+        <strong>✅ Audio processed successfully!</strong>
+
+        <p>
+            File: {{ filename }}
+        </p>
+    </div>
+
+    <form action="/meeting" method="POST">
+
+        <label class="label">
+            Meeting Title
+        </label>
+
+        <input
+            type="text"
+            name="meeting_title"
+            value="Audio Meeting"
+            required
+        >
+
+        <label class="label">
+            Participants
+        </label>
+
+        <input
+            type="text"
+            name="participants"
+            placeholder="Example: Dharshan, Arun, Kumar"
+            required
+        >
+
+        <label class="label">
+            Generated Transcript
+        </label>
+
+        <p class="info">
+            The transcript below was generated from your uploaded audio.
+            You can correct it before analysis.
+        </p>
+
+        <textarea
+            name="transcript"
+            required
+        >{{ transcript }}</textarea>
+
+        <button type="submit">
+            🤖 Analyze Meeting
+        </button>
+
+    </form>
+
+    <a class="back" href="/upload_audio">
+        ← Upload Another Audio
+    </a>
+
+</div>
+
+</body>
+</html>

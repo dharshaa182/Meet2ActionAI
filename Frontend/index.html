@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meet2Action AI</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div class="container">
+
+        <h1>Meet2Action AI</h1>
+
+        <p class="subtitle">
+            Turn your meetings into actionable tasks
+        </p>
+
+        <div class="upload-box">
+
+            <h2>🎙️ Upload Meeting</h2>
+
+            <p>
+                Upload your meeting audio or transcript
+            </p>
+
+            <input type="file" id="meetingFile">
+
+            <button onclick="analyzeMeeting()">
+                Analyze Meeting
+            </button>
+
+        </div>
+
+        <div id="result" class="result-box">
+
+            <h2>📋 Meeting Results</h2>
+
+            <p id="message">
+                Upload a meeting file and click Analyze.
+            </p>
+
+        </div>
+
+    </div>
+
+    <script src="script.js"></script>
+
+</body>
+</html>

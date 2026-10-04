@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Meeting History - Meet2Action</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f7fb;
+            color: #111;
+        }
+
+        .navbar {
+            background: #111;
+            color: white;
+            padding: 18px 7%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            margin-left: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 35px;
+        }
+
+        .meeting {
+            background: white;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-radius: 14px;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.08);
+        }
+
+        .meeting h2 {
+            margin-top: 0;
+        }
+
+        .info {
+            color: #666;
+            margin: 8px 0;
+        }
+
+        .summary {
+            background: #f5f7fb;
+            padding: 15px;
+            border-radius: 10px;
+            line-height: 1.6;
+        }
+
+        .btn {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 11px 18px;
+            background: #111;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+
+        .empty {
+            background: white;
+            padding: 40px;
+            text-align: center;
+            border-radius: 14px;
+            color: #777;
+        }
+
+        .back {
+            display: block;
+            text-align: center;
+            margin-top: 30px;
+            color: #111;
+            text-decoration: none;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="navbar">
+
+        <div class="logo">
+            Meet2Action
+        </div>
+
+        <div>
+            <a href="/">Home</a>
+            <a href="/dashboard">Dashboard</a>
+            <a href="/notifications">🔔</a>
+        </div>
+
+    </div>
+
+
+    <div class="container">
+
+        <h1>📚 Meeting History</h1>
+
+
+        {% if meetings %}
+
+            {% for meeting in meetings %}
+
+                <div class="meeting">
+
+                    <h2>
+                        {{ meeting[1] }}
+                    </h2>
+
+                    <p class="info">
+                        👤 <strong>Participants:</strong>
+                        {{ meeting[2] }}
+                    </p>
+
+                    <h3>📝 Summary</h3>
+
+                    <div class="summary">
+                        {{ meeting[3] }}
+                    </div>
+
+                    <a
+                        class="btn"
+                        href="/meeting/{{ meeting[0] }}"
+                    >
+                        🔎 View Meeting Details
+                    </a>
+
+                </div>
+
+            {% endfor %}
+
+        {% else %}
+
+            <div class="empty">
+
+                <h2>📭 No Meetings Yet</h2>
+
+                <p>
+                    Upload a meeting recording or enter
+                    meeting notes to create your first meeting.
+                </p>
+
+                <a
+                    class="btn"
+                    href="/upload_audio"
+                >
+                    🎙️ Upload Meeting
+                </a>
+
+            </div>
+
+        {% endif %}
+
+
+        <a class="back" href="/">
+            ← Back to Home
+        </a>
+
+    </div>
+
+</body>
+</html>

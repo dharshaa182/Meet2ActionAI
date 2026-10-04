@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Problems - Meet2Action</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f7fb;
+            margin: 0;
+            padding: 30px 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .problem-card {
+            background: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        }
+
+        .problem-card h2 {
+            margin-top: 0;
+        }
+
+        .location {
+            color: #2563eb;
+            font-weight: bold;
+        }
+
+        .back {
+            display: inline-block;
+            margin-bottom: 20px;
+            text-decoration: none;
+            color: #2563eb;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <a class="back" href="/">← Back to Home</a>
+
+    <h1>Reported Problems</h1>
+
+    {% if problems %}
+
+        {% for problem in problems %}
+
+        <div class="problem-card">
+
+            <h2>{{ problem[1] }}</h2>
+
+            <p>{{ problem[2] }}</p>
+
+            <p class="location">
+                📍 {{ problem[3] }}
+            </p>
+
+        </div>
+
+        {% endfor %}
+
+    {% else %}
+
+        <div class="problem-card">
+            <h2>No Problems Reported Yet</h2>
+            <p>Be the first person to report a problem.</p>
+        </div>
+
+    {% endif %}
+
+</div>
+
+</body>
+</html>

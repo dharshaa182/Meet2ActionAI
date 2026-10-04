@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Meeting Details - Meet2Action</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f7fb;
+            color: #111;
+        }
+
+        .navbar {
+            background: #111;
+            color: white;
+            padding: 18px 7%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            margin-left: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            margin-bottom: 25px;
+            border-radius: 14px;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.08);
+        }
+
+        .info {
+            color: #555;
+            line-height: 1.7;
+        }
+
+        .summary {
+            background: #f5f7fb;
+            padding: 18px;
+            border-radius: 10px;
+            line-height: 1.7;
+        }
+
+        .transcript {
+            background: #111;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+        }
+
+        .task {
+            border: 1px solid #eee;
+            padding: 18px;
+            margin: 15px 0;
+            border-radius: 10px;
+        }
+
+        .task h3 {
+            margin-top: 0;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 6px 10px;
+            margin: 5px 5px 0 0;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+        }
+
+        .high {
+            background: #ffe1e1;
+            color: #b00000;
+        }
+
+        .medium {
+            background: #fff0c7;
+            color: #8a6200;
+        }
+
+        .low {
+            background: #e5f4e5;
+            color: #247024;
+        }
+
+        .status {
+            background: #eee;
+            color: #444;
+        }
+
+        .completed {
+            background: #e5f4e5;
+            color: #247024;
+        }
+
+        .overdue {
+            background: #ffe1e1;
+            color: #b00000;
+        }
+
+        .complete-btn {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 9px 15px;
+            background: #111;
+            color: white;
+            text-decoration: none;
+            border-radius: 7px;
+        }
+
+        .back {
+            display: inline-block;
+            padding: 12px 20px;
+            background: white;
+            color: #111;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .empty {
+            text-align: center;
+            color: #777;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="navbar">
+
+        <div class="logo">
+            Meet2Action
+        </div>
+
+        <div>
+            <a href="/">Home</a>
+            <a href="/dashboard">Dashboard</a>
+            <a href="/history">History</a>
+        </div>
+
+    </div>
+
+
+    <div class="container">
+
+        <h1>📋 Meeting Details</h1>
+
+
+        <!-- MEETING INFO -->
+
+        <div class="card">
+
+            <h2>{{ meeting[1] }}</h2>
+
+            <p class="info">
+                👤 <strong>Participants:</strong>
+                {{ meeting[2] }}
+            </p>
+
+        </div>
+
+
+        <!-- SUMMARY -->
+
+        <div class="card">
+
+            <h2>📝 Meeting Summary</h2>
+
+            <div class="summary">
+                {{ meeting[4] }}
+            </div>
+
+        </div>
+
+
+        <!-- TRANSCRIPT -->
+
+        <div class="card">
+
+            <h2>🎙️ Full Transcript</h2>
+
+            <div class="transcript">
+                {{ meeting[3] }}
+            </div>
+
+        </div>
+
+
+        <!-- ACTION ITEMS -->
+
+        <div class="card">
+
+            <h2>✅ Action Items</h2>
+
+            {% if tasks %}
+
+                {% for task in tasks %}
+
+                    <div class="task">
+
+                        <h3>
+                            {{ loop.index }}. {{ task[1] }}
+                        </h3>
+
+                        <p class="info">
+                            👤 <strong>Owner:</strong>
+                            {{ task[2] }}
+                        </p>
+
+                        <p class="info">
+                            📅 <strong>Deadline:</strong>
+                            {{ task[3] }}
+                        </p>
+
+                        {% if task[4] == "High" %}
+
+                            <span class="badge high">
+                                🔴 High Priority
+                            </span>
+
+                        {% elif task[4] == "Medium" %}
+
+                            <span class="badge medium">
+                                🟡 Medium Priority
+                            </span>
+
+                        {% else %}
+
+                            <span class="badge low">
+                                🟢 Low Priority
+                            </span>
+
+                        {% endif %}
+
+
+                        {% if task[5] == "Completed" %}
+
+                            <span class="badge completed">
+                                ✓ Completed
+                            </span>
+
+                        {% elif task[5] == "Overdue" %}
+
+                            <span class="badge overdue">
+                                ⚠️ Overdue
+                            </span>
+
+                        {% else %}
+
+                            <span class="badge status">
+                                ⏳ Pending
+                            </span>
+
+                            <br>
+
+                            <a
+                                class="complete-btn"
+                                href="/complete/{{ task[0] }}"
+                            >
+                                ✓ Mark as Completed
+                            </a>
+
+                        {% endif %}
+
+                    </div>
+
+                {% endfor %}
+
+            {% else %}
+
+                <div class="empty">
+                    <p>No action items detected.</p>
+                </div>
+
+            {% endif %}
+
+        </div>
+
+
+        <a class="back" href="/history">
+            ← Back to Meeting History
+        </a>
+
+    </div>
+
+</body>
+</html>

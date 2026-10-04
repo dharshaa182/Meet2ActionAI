@@ -1,0 +1,407 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f5f7fb;
+    color: #1f2937;
+    min-height: 100vh;
+}
+
+/* =========================
+   MAIN CONTAINER
+========================= */
+
+.container {
+    width: 90%;
+    max-width: 1100px;
+    margin: auto;
+    padding: 30px 0;
+}
+
+/* =========================
+   HEADER
+========================= */
+
+header {
+    background: #111827;
+    color: white;
+    padding: 22px 5%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header h1 {
+    font-size: 26px;
+}
+
+header p {
+    color: #cbd5e1;
+    margin-top: 5px;
+}
+
+/* =========================
+   BUTTONS
+========================= */
+
+button {
+    border: none;
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    background: #2563eb;
+    color: white;
+    transition: 0.2s;
+}
+
+button:hover {
+    transform: translateY(-1px);
+    opacity: 0.9;
+}
+
+/* =========================
+   UPLOAD SECTION
+========================= */
+
+.upload-box {
+    background: white;
+    padding: 30px;
+    border-radius: 18px;
+    border: 1px solid #e5e7eb;
+    margin-bottom: 30px;
+    text-align: center;
+}
+
+.upload-box h2 {
+    margin-bottom: 10px;
+}
+
+.upload-box p {
+    color: #6b7280;
+    margin-bottom: 20px;
+}
+
+input[type="file"] {
+    width: 100%;
+    padding: 12px;
+    border: 1px dashed #9ca3af;
+    border-radius: 10px;
+    background: #f9fafb;
+    margin-bottom: 15px;
+}
+
+/* =========================
+   MESSAGE
+========================= */
+
+#message {
+    width: 100%;
+}
+
+/* =========================
+   LOADING
+========================= */
+
+.loading-box {
+    background: white;
+    padding: 30px;
+    border-radius: 16px;
+    text-align: center;
+    border: 1px solid #e5e7eb;
+}
+
+.loading-box h2 {
+    margin-bottom: 10px;
+}
+
+.loading-box p {
+    color: #6b7280;
+}
+
+/* =========================
+   MEETING RESULT
+========================= */
+
+.meeting-result {
+    width: 100%;
+    max-width: 900px;
+    margin: 30px auto;
+}
+
+/* =========================
+   SUCCESS HEADER
+========================= */
+
+.success-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 22px;
+    border-radius: 16px;
+    margin-bottom: 25px;
+    background: white;
+    border: 1px solid #e5e7eb;
+}
+
+.success-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    font-weight: bold;
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.success-header h2 {
+    margin: 0;
+    font-size: 22px;
+}
+
+.success-header p {
+    margin-top: 5px;
+    color: #6b7280;
+}
+
+/* =========================
+   RESULT SECTION
+========================= */
+
+.result-section {
+    margin-bottom: 30px;
+}
+
+.result-section h3 {
+    font-size: 20px;
+    margin-bottom: 15px;
+}
+
+/* =========================
+   TRANSCRIPT
+========================= */
+
+.transcript-box {
+    background: white;
+    padding: 22px;
+    border-radius: 14px;
+    line-height: 1.8;
+    border: 1px solid #e5e7eb;
+    color: #374151;
+}
+
+/* =========================
+   ACTION TITLE
+========================= */
+
+.section-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.section-title h3 {
+    margin: 0;
+}
+
+.task-count {
+    background: #eff6ff;
+    color: #2563eb;
+    padding: 7px 13px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* =========================
+   ACTION LIST
+========================= */
+
+.action-list {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* =========================
+   ACTION CARD
+========================= */
+
+.action-card {
+    display: flex;
+    gap: 18px;
+    padding: 20px;
+    background: white;
+    border-radius: 16px;
+    border: 1px solid #e5e7eb;
+    transition: 0.2s;
+}
+
+.action-card:hover {
+    transform: translateY(-2px);
+}
+
+/* =========================
+   ACTION NUMBER
+========================= */
+
+.action-number {
+    min-width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: #2563eb;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+}
+
+/* =========================
+   ACTION CONTENT
+========================= */
+
+.action-content {
+    width: 100%;
+}
+
+.action-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    padding: 10px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.action-row:last-child {
+    border-bottom: none;
+}
+
+.label {
+    font-weight: 600;
+    color: #6b7280;
+}
+
+.action-row strong {
+    text-align: right;
+    color: #111827;
+}
+
+/* =========================
+   PRIORITY
+========================= */
+
+.priority {
+    padding: 6px 13px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.priority.high {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.priority.medium {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.priority.low {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+/* =========================
+   NO TASK
+========================= */
+
+.no-task {
+    background: white;
+    padding: 22px;
+    border-radius: 14px;
+    border: 1px solid #e5e7eb;
+    color: #6b7280;
+}
+
+/* =========================
+   ERROR
+========================= */
+
+.error-box {
+    background: #fff;
+    padding: 22px;
+    border-radius: 14px;
+    border: 1px solid #fecaca;
+    color: #b91c1c;
+}
+
+.error-box p {
+    margin-top: 8px;
+}
+
+/* =========================
+   RESPONSIVE MOBILE
+========================= */
+
+@media (max-width: 700px) {
+
+    .container {
+        width: 94%;
+        padding: 20px 0;
+    }
+
+    header {
+        padding: 18px 4%;
+    }
+
+    header h1 {
+        font-size: 21px;
+    }
+
+    .upload-box {
+        padding: 20px;
+    }
+
+    .success-header {
+        padding: 18px;
+    }
+
+    .success-header h2 {
+        font-size: 18px;
+    }
+
+    .action-card {
+        padding: 15px;
+    }
+
+    .action-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
+    }
+
+    .action-row strong {
+        text-align: left;
+    }
+
+    .section-title {
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .task-count {
+        font-size: 12px;
+    }
+}

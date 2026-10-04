@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Notifications</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            padding: 30px;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .notification {
+            background: white;
+            padding: 20px;
+            margin: 15px auto;
+            max-width: 700px;
+            border-radius: 12px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        }
+
+        .overdue {
+            border-left: 6px solid red;
+        }
+
+        .pending {
+            border-left: 6px solid orange;
+        }
+
+        .completed {
+            color: green;
+        }
+
+        .back {
+            display: block;
+            text-align: center;
+            margin-top: 25px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .status {
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>🔔 Notifications & Reminders</h1>
+
+    {% if notifications %}
+
+        {% for notification in notifications %}
+
+            <div class="notification
+                {% if notification[5] == 'Overdue' %}
+                    overdue
+                {% else %}
+                    pending
+                {% endif %}
+            ">
+
+                <h3>
+                    {% if notification[5] == 'Overdue' %}
+                        ⚠️ Overdue Task
+                    {% else %}
+                        🔔 Pending Task
+                    {% endif %}
+                </h3>
+
+                <p>
+                    <strong>Task:</strong>
+                    {{ notification[1] }}
+                </p>
+
+                <p>
+                    <strong>Owner:</strong>
+                    {{ notification[2] }}
+                </p>
+
+                <p>
+                    <strong>Deadline:</strong>
+                    {{ notification[3] }}
+                </p>
+
+                <p>
+                    <strong>Priority:</strong>
+                    {{ notification[4] }}
+                </p>
+
+                <p class="status">
+                    <strong>Status:</strong>
+                    {{ notification[5] }}
+                </p>
+
+                <a href="/complete/{{ notification[0] }}">
+                    Mark as Completed
+                </a>
+
+            </div>
+
+        {% endfor %}
+
+    {% else %}
+
+        <div class="notification">
+            <h3>✅ No Notifications</h3>
+            <p>There are no pending or overdue tasks.</p>
+        </div>
+
+    {% endif %}
+
+    <a class="back" href="/dashboard">
+        ← Back to Dashboard
+    </a>
+
+</body>
+</html>
