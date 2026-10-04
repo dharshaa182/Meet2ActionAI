@@ -1,3 +1,4 @@
 Flask
-faster-whisper
+faster-whisper==1.2.1
+av==15.1.0
 gunicorn
