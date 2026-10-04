@@ -2,17 +2,32 @@ async function analyzeMeeting() {
 
     const fileInput = document.getElementById("meetingFile");
     const message = document.getElementById("message");
+
+    if (!fileInput) {
+        console.error("meetingFile input not found");
+        return;
+    }
+
+    if (!message) {
+        console.error("message element not found");
+        return;
+    }
+
     const file = fileInput.files[0];
 
     if (!file) {
-        message.innerHTML = "⚠️ Please upload a meeting file first.";
+        message.innerHTML = `
+            <div class="error-box">
+                ⚠️ Please upload a meeting audio file first.
+            </div>
+        `;
         return;
     }
 
     message.innerHTML = `
         <div class="loading-box">
             <h2>🤖 AI is analyzing your meeting...</h2>
-            <p>Please wait while we process the audio.</p>
+            <p>Please wait while Meet2ActionAI processes the audio.</p>
         </div>
     `;
 
@@ -21,28 +36,43 @@ async function analyzeMeeting() {
         const formData = new FormData();
         formData.append("file", file);
 
+        console.log("Sending file to backend:", file.name);
+
         const response = await fetch(
-            "http://meet2actionai.onrender.com/analyze",
+            "https://meet2actionai.onrender.com/analyze",
             {
                 method: "POST",
                 body: formData
             }
         );
 
+        console.log("Backend response status:", response.status);
+
         const result = await response.json();
 
+        console.log("Backend result:", result);
+
         if (!response.ok) {
-            throw new Error(result.error || "Analysis failed");
+            throw new Error(
+                result.error || "Meeting analysis failed"
+            );
         }
 
         let actionItems = "";
 
-        if (result.tasks && result.tasks.length > 0) {
+        if (
+            result.tasks &&
+            Array.isArray(result.tasks) &&
+            result.tasks.length > 0
+        ) {
 
             result.tasks.forEach((task, index) => {
 
-                let priorityClass =
-                    task.priority.toLowerCase();
+                const priority =
+                    task.priority || "Low";
+
+                const priorityClass =
+                    priority.toLowerCase();
 
                 actionItems += `
                     <div class="action-card">
@@ -54,24 +84,42 @@ async function analyzeMeeting() {
                         <div class="action-content">
 
                             <div class="action-row">
-                                <span class="label">👤 Person</span>
-                                <strong>${task.person}</strong>
+                                <span class="label">
+                                    👤 Person
+                                </span>
+
+                                <strong>
+                                    ${task.person || "Not identified"}
+                                </strong>
                             </div>
 
                             <div class="action-row">
-                                <span class="label">✅ Task</span>
-                                <strong>${task.task}</strong>
+                                <span class="label">
+                                    ✅ Task
+                                </span>
+
+                                <strong>
+                                    ${task.task || "Not identified"}
+                                </strong>
                             </div>
 
                             <div class="action-row">
-                                <span class="label">📅 Deadline</span>
-                                <strong>${task.deadline}</strong>
+                                <span class="label">
+                                    📅 Deadline
+                                </span>
+
+                                <strong>
+                                    ${task.deadline || "Not specified"}
+                                </strong>
                             </div>
 
                             <div class="action-row">
-                                <span class="label">🔥 Priority</span>
+                                <span class="label">
+                                    🔥 Priority
+                                </span>
+
                                 <span class="priority ${priorityClass}">
-                                    ${task.priority}
+                                    ${priority}
                                 </span>
                             </div>
 
@@ -95,21 +143,35 @@ async function analyzeMeeting() {
             <div class="meeting-result">
 
                 <div class="success-header">
-                    <div class="success-icon">✓</div>
+
+                    <div class="success-icon">
+                        ✓
+                    </div>
 
                     <div>
-                        <h2>Meeting Analyzed Successfully</h2>
-                        <p>Meet2ActionAI has processed your meeting.</p>
+                        <h2>
+                            Meeting Analyzed Successfully
+                        </h2>
+
+                        <p>
+                            Meet2ActionAI has processed your meeting.
+                        </p>
                     </div>
+
                 </div>
 
 
                 <section class="result-section">
 
-                    <h3>📝 Meeting Transcript</h3>
+                    <h3>
+                        📝 Meeting Transcript
+                    </h3>
 
                     <div class="transcript-box">
-                        ${result.result || "No speech detected."}
+                        ${
+                            result.result ||
+                            "No speech detected."
+                        }
                     </div>
 
                 </section>
@@ -118,10 +180,19 @@ async function analyzeMeeting() {
                 <section class="result-section">
 
                     <div class="section-title">
-                        <h3>📋 Action Items</h3>
+
+                        <h3>
+                            📋 Action Items
+                        </h3>
+
                         <span class="task-count">
-                            ${result.tasks ? result.tasks.length : 0} Tasks
+                            ${
+                                result.tasks
+                                    ? result.tasks.length
+                                    : 0
+                            } Tasks
                         </span>
+
                     </div>
 
                     <div class="action-list">
@@ -135,12 +206,27 @@ async function analyzeMeeting() {
 
     } catch (error) {
 
-        console.error(error);
+        console.error(
+            "Meet2ActionAI Error:",
+            error
+        );
 
         message.innerHTML = `
             <div class="error-box">
-                ❌ <strong>Analysis failed</strong>
-                <p>${error.message}</p>
+
+                ❌ <strong>
+                    Analysis failed
+                </strong>
+
+                <p>
+                    ${error.message}
+                </p>
+
+                <small>
+                    Please check your internet connection
+                    and try again.
+                </small>
+
             </div>
         `;
     }
