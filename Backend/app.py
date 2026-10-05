@@ -87,15 +87,24 @@ def init_db():
     conn = get_db()
     cur = conn.cursor()
 
+    # -----------------------------------------------------
+    # Meetings
+    # -----------------------------------------------------
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS meetings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT,
             transcript TEXT,
             summary TEXT,
+            participants TEXT,
             created_at TEXT
         )
     """)
+
+    # -----------------------------------------------------
+    # Tasks
+    # -----------------------------------------------------
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
@@ -111,6 +120,10 @@ def init_db():
         )
     """)
 
+    # -----------------------------------------------------
+    # Problems
+    # -----------------------------------------------------
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS problems (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,23 +134,41 @@ def init_db():
     """)
 
     # -----------------------------------------------------
-    # Safe migration for older databases
+    # Safe migration for old meetings database
     # -----------------------------------------------------
 
-    columns = [
+    meeting_columns = [
         row["name"]
         for row in cur.execute(
             "PRAGMA table_info(meetings)"
         ).fetchall()
     ]
 
-    if "participants" not in columns:
+    if "participants" not in meeting_columns:
         try:
             cur.execute(
                 "ALTER TABLE meetings ADD COLUMN participants TEXT"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print(
+                "Participants migration warning:",
+                repr(e)
+            )
+
+    if "created_at" not in meeting_columns:
+        try:
+            cur.execute(
+                "ALTER TABLE meetings ADD COLUMN created_at TEXT"
+            )
+        except Exception as e:
+            print(
+                "Meeting created_at migration warning:",
+                repr(e)
+            )
+
+    # -----------------------------------------------------
+    # Task migrations
+    # -----------------------------------------------------
 
     task_columns = [
         row["name"]
@@ -151,16 +182,76 @@ def init_db():
             cur.execute(
                 "ALTER TABLE tasks ADD COLUMN meeting_id INTEGER"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print(
+                "Task meeting_id migration warning:",
+                repr(e)
+            )
 
     if "created_at" not in task_columns:
         try:
             cur.execute(
                 "ALTER TABLE tasks ADD COLUMN created_at TEXT"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print(
+                "Task created_at migration warning:",
+                repr(e)
+            )
+
+    if "priority" not in task_columns:
+        try:
+            cur.execute(
+                "ALTER TABLE tasks ADD COLUMN priority TEXT"
+            )
+        except Exception as e:
+            print(
+                "Task priority migration warning:",
+                repr(e)
+            )
+
+    if "status" not in task_columns:
+        try:
+            cur.execute(
+                "ALTER TABLE tasks ADD COLUMN status TEXT DEFAULT 'Pending'"
+            )
+        except Exception as e:
+            print(
+                "Task status migration warning:",
+                repr(e)
+            )
+
+    # -----------------------------------------------------
+    # Existing NULL participants safety
+    # -----------------------------------------------------
+
+    try:
+        cur.execute("""
+            UPDATE meetings
+            SET participants = ''
+            WHERE participants IS NULL
+        """)
+    except Exception as e:
+        print(
+            "Participants cleanup warning:",
+            repr(e)
+        )
+
+    # -----------------------------------------------------
+    # Existing NULL status safety
+    # -----------------------------------------------------
+
+    try:
+        cur.execute("""
+            UPDATE tasks
+            SET status = 'Pending'
+            WHERE status IS NULL OR status = ''
+        """)
+    except Exception as e:
+        print(
+            "Task status cleanup warning:",
+            repr(e)
+        )
 
     conn.commit()
     conn.close()
@@ -205,7 +296,11 @@ def generate_summary(transcript):
     if not transcript:
         return "No transcript available."
 
-    text = re.sub(r"\s+", " ", transcript).strip()
+    text = re.sub(
+        r"\s+",
+        " ",
+        transcript
+    ).strip()
 
     if len(text) <= 500:
         return text
@@ -222,7 +317,11 @@ def clean_text(text):
     if not text:
         return ""
 
-    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
 
     return text
 
@@ -231,7 +330,7 @@ def normalize_task(task):
 
     task = clean_text(task)
 
-    # Remove speaker assignment prefixes.
+    # Remove self assignment prefix
     task = re.sub(
         r"^(?:"
         r"i\s+(?:will|shall|can|am going to)\s+|"
@@ -244,7 +343,7 @@ def normalize_task(task):
         flags=re.I
     )
 
-    # Remove named-person prefix.
+    # Remove named-person assignment prefix
     task = re.sub(
         r"^[A-Za-z][A-Za-z0-9_-]*\s+"
         r"(?:will|shall|can|is going to|has to|needs to|must)\s+",
@@ -253,7 +352,7 @@ def normalize_task(task):
         flags=re.I
     )
 
-    # Remove common task prefixes.
+    # Remove common task prefixes
     task = re.sub(
         r"^(?:"
         r"we need to|"
@@ -296,7 +395,6 @@ KNOWN_NAMES = {
     "arun": "Arun",
     "kumar": "Kumar",
     "priya": "Priya",
-    "kamali": "Kamali",
     "kamali": "Kamali"
 }
 
@@ -305,10 +403,7 @@ def detect_owner(sentence):
 
     text = clean_text(sentence)
 
-    # -----------------------------------------------------
-    # Explicit self assignment
-    # -----------------------------------------------------
-
+    # Self assignment
     if re.search(
         r"\bI\s+(?:will|shall|can|am going to)\b",
         text,
@@ -316,10 +411,7 @@ def detect_owner(sentence):
     ):
         return "Self"
 
-    # -----------------------------------------------------
-    # Explicit team assignment
-    # -----------------------------------------------------
-
+    # Team assignment
     if re.search(
         r"\b(?:we|our team|the team)\s+"
         r"(?:will|shall|can|are going to)\b",
@@ -328,10 +420,7 @@ def detect_owner(sentence):
     ):
         return "Team"
 
-    # -----------------------------------------------------
-    # Known person names
-    # -----------------------------------------------------
-
+    # Known names
     for name_key, display_name in KNOWN_NAMES.items():
 
         pattern = (
@@ -341,13 +430,14 @@ def detect_owner(sentence):
             r"(?:will|shall|can|is going to|has to|needs to|must)"
         )
 
-        if re.search(pattern, text, flags=re.I):
+        if re.search(
+            pattern,
+            text,
+            flags=re.I
+        ):
             return display_name
 
-    # -----------------------------------------------------
     # Generic named person
-    # -----------------------------------------------------
-
     match = re.search(
         r"\b([A-Z][a-z]{2,})\s+"
         r"(?:will|shall|can|is going to|has to|needs to|must)\b",
@@ -357,10 +447,7 @@ def detect_owner(sentence):
     if match:
         return match.group(1)
 
-    # -----------------------------------------------------
     # Assigned to / responsible for
-    # -----------------------------------------------------
-
     match = re.search(
         r"(?:assigned to|responsible for)\s+"
         r"([A-Z][a-z]{2,})",
@@ -393,27 +480,21 @@ def detect_deadline(sentence):
 
     text = clean_text(sentence)
 
-    # Today
     if re.search(r"\btoday\b", text, re.I):
         return "Today"
 
-    # Tomorrow
     if re.search(r"\btomorrow\b", text, re.I):
         return "Tomorrow"
 
-    # Tonight
     if re.search(r"\btonight\b", text, re.I):
         return "Tonight"
 
-    # This week
     if re.search(r"\bthis week\b", text, re.I):
         return "This week"
 
-    # Next week
     if re.search(r"\bnext week\b", text, re.I):
         return "Next week"
 
-    # Weekday
     weekday_pattern = (
         r"\b(?:by|before|on)?\s*"
         r"(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
@@ -426,9 +507,10 @@ def detect_deadline(sentence):
     )
 
     if match:
-        return WEEKDAYS[match.group(1).lower()]
+        return WEEKDAYS[
+            match.group(1).lower()
+        ]
 
-    # Month + date
     month_pattern = (
         r"\b("
         r"january|february|march|april|may|june|"
@@ -456,7 +538,6 @@ def detect_deadline(sentence):
 
         return f"{month} {day}"
 
-    # Date + month
     reverse_month_pattern = (
         r"\b(\d{1,2})\s+"
         r"(january|february|march|april|may|june|"
@@ -481,7 +562,6 @@ def detect_deadline(sentence):
 
         return f"{month} {day}"
 
-    # Numeric date
     numeric_date = re.search(
         r"\b(?:by|before|on)?\s*"
         r"(\d{1,2})[/-](\d{1,2})"
@@ -527,10 +607,16 @@ def detect_priority(sentence):
         "soon"
     ]
 
-    if any(word in text for word in high_words):
+    if any(
+        word in text
+        for word in high_words
+    ):
         return "High"
 
-    if any(word in text for word in medium_words):
+    if any(
+        word in text
+        for word in medium_words
+    ):
         return "Medium"
 
     return "Low"
@@ -560,7 +646,6 @@ IGNORE_PHRASES = [
     "teamwork depends",
     "clear communication",
     "communication is",
-    "work together",
     "finish them on time",
     "successful project",
     "first, we need to divide the tasks",
@@ -578,12 +663,12 @@ def is_ignored_sentence(sentence):
         if phrase in text:
             return True
 
-    # Questions are generally discussion, not action items.
+    # Questions are discussion, not action items
     if text.endswith("?"):
         return True
 
-    # Very short motivational statements.
     if len(text.split()) <= 4:
+
         short_ignore = [
             "great work everyone",
             "great work",
@@ -611,10 +696,7 @@ def is_real_task(sentence):
 
     lower = text.lower()
 
-    # -----------------------------------------------------
-    # Explicit assignment patterns
-    # -----------------------------------------------------
-
+    # Explicit assignment
     if re.search(
         r"\b[A-Za-z][A-Za-z0-9_-]*\s+"
         r"(?:will|shall|can|is going to|has to|needs to|must)\b",
@@ -623,10 +705,7 @@ def is_real_task(sentence):
     ):
         return True
 
-    # -----------------------------------------------------
     # First person action
-    # -----------------------------------------------------
-
     if re.search(
         r"\b(?:I|we|our team)\s+"
         r"(?:will|shall|can|need to|have to|must|"
@@ -636,10 +715,7 @@ def is_real_task(sentence):
     ):
         return True
 
-    # -----------------------------------------------------
     # Task verbs
-    # -----------------------------------------------------
-
     action_verbs = [
         "prepare",
         "complete",
@@ -676,10 +752,7 @@ def is_real_task(sentence):
         ):
             return True
 
-    # -----------------------------------------------------
     # Explicit obligation
-    # -----------------------------------------------------
-
     if re.search(
         r"\b(?:need to|needs to|has to|have to|must|"
         r"responsible for|assigned to)\b",
@@ -691,7 +764,7 @@ def is_real_task(sentence):
 
 
 # =========================================================
-# TASK EXTRACTION
+# SENTENCE SPLITTING
 # =========================================================
 
 def split_sentences(transcript):
@@ -701,7 +774,7 @@ def split_sentences(transcript):
     if not text:
         return []
 
-    # Convert common transcript separators.
+    # Help Whisper output split into assignment sentences.
     text = re.sub(
         r"\s+(?=(?:I|We|They|The team|[A-Z][a-z]+)\s+"
         r"(?:will|shall|can|must|needs to|has to)\b)",
@@ -721,9 +794,15 @@ def split_sentences(transcript):
     ]
 
 
+# =========================================================
+# TASK EXTRACTION
+# =========================================================
+
 def extract_tasks(transcript):
 
-    sentences = split_sentences(transcript)
+    sentences = split_sentences(
+        transcript
+    )
 
     tasks = []
     seen = set()
@@ -733,23 +812,32 @@ def extract_tasks(transcript):
         if not is_real_task(sentence):
             continue
 
-        # Remove trailing punctuation.
-        sentence = sentence.strip(" .,!;:")
+        sentence = sentence.strip(
+            " .,!;:"
+        )
 
-        owner = detect_owner(sentence)
-        deadline = detect_deadline(sentence)
-        priority = detect_priority(sentence)
+        owner = detect_owner(
+            sentence
+        )
 
-        task_text = normalize_task(sentence)
+        deadline = detect_deadline(
+            sentence
+        )
+
+        priority = detect_priority(
+            sentence
+        )
+
+        task_text = normalize_task(
+            sentence
+        )
 
         if not task_text:
             continue
 
-        # Don't save sentences that become too vague.
         if len(task_text.split()) < 3:
             continue
 
-        # Normalize duplicate comparison.
         duplicate_key = re.sub(
             r"[^a-z0-9]+",
             " ",
@@ -772,7 +860,7 @@ def extract_tasks(transcript):
 
 
 # =========================================================
-# REMOVE DUPLICATES FOR ONE MEETING
+# DELETE TASKS FOR ONE MEETING
 # =========================================================
 
 def delete_meeting_tasks(meeting_id):
@@ -789,7 +877,7 @@ def delete_meeting_tasks(meeting_id):
 
 
 # =========================================================
-# OLD GLOBAL DUPLICATE CLEANUP
+# DUPLICATE CLEANUP
 # =========================================================
 
 def cleanup_duplicate_tasks():
@@ -797,7 +885,7 @@ def cleanup_duplicate_tasks():
     conn = get_db()
 
     rows = conn.execute("""
-        SELECT id, meeting_id, task, created_at
+        SELECT id, meeting_id, task
         FROM tasks
         ORDER BY id ASC
     """).fetchall()
@@ -807,7 +895,9 @@ def cleanup_duplicate_tasks():
 
     for row in rows:
 
-        task = clean_text(row["task"])
+        task = clean_text(
+            row["task"]
+        )
 
         key = re.sub(
             r"[^a-z0-9]+",
@@ -816,27 +906,38 @@ def cleanup_duplicate_tasks():
         ).strip()
 
         if not key:
-            delete_ids.append(row["id"])
+
+            delete_ids.append(
+                row["id"]
+            )
+
             continue
 
-        # Do NOT delete same task from different meetings.
-        # Historical meetings are allowed to contain
-        # similar tasks.
         meeting_key = (
             row["meeting_id"],
             key
         )
 
         if meeting_key in seen:
-            delete_ids.append(row["id"])
+
+            delete_ids.append(
+                row["id"]
+            )
+
         else:
-            seen.add(meeting_key)
+
+            seen.add(
+                meeting_key
+            )
 
     if delete_ids:
 
         conn.executemany(
             "DELETE FROM tasks WHERE id = ?",
-            [(task_id,) for task_id in delete_ids]
+            [
+                (task_id,)
+                for task_id in delete_ids
+            ]
         )
 
     conn.commit()
@@ -851,7 +952,9 @@ def transcribe_audio(audio_path):
 
     model = get_whisper_model()
 
-    print("Transcription started...")
+    print(
+        "Transcription started..."
+    )
 
     segments, info = model.transcribe(
         audio_path,
@@ -866,11 +969,17 @@ def transcribe_audio(audio_path):
         text = segment.text.strip()
 
         if text:
-            text_parts.append(text)
+            text_parts.append(
+                text
+            )
 
-    transcript = " ".join(text_parts)
+    transcript = " ".join(
+        text_parts
+    )
 
-    print("Transcription completed.")
+    print(
+        "Transcription completed."
+    )
 
     return transcript
 
@@ -899,25 +1008,37 @@ def upload_audio():
 
     if "audio" not in request.files:
 
-        flash("Please select an audio file.")
+        flash(
+            "Please select an audio file."
+        )
 
-        return redirect(url_for("home"))
+        return redirect(
+            url_for("home")
+        )
 
     file = request.files["audio"]
 
     if not file or not file.filename:
 
-        flash("No audio file selected.")
+        flash(
+            "No audio file selected."
+        )
 
-        return redirect(url_for("home"))
+        return redirect(
+            url_for("home")
+        )
 
-    if not allowed_file(file.filename):
+    if not allowed_file(
+        file.filename
+    ):
 
         flash(
             "Unsupported audio format."
         )
 
-        return redirect(url_for("home"))
+        return redirect(
+            url_for("home")
+        )
 
     original_name = secure_filename(
         file.filename
@@ -940,7 +1061,9 @@ def upload_audio():
 
     file.save(filepath)
 
-    print(f"Audio saved: {filepath}")
+    print(
+        f"Audio saved: {filepath}"
+    )
 
     try:
 
@@ -969,14 +1092,24 @@ def upload_audio():
 
     conn = get_db()
 
+    # IMPORTANT:
+    # participants is explicitly inserted
+    # because existing database has NOT NULL constraint.
     cursor = conn.execute("""
         INSERT INTO meetings
-        (title, transcript, summary, created_at)
-        VALUES (?, ?, ?, ?)
+        (
+            title,
+            transcript,
+            summary,
+            participants,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?)
     """, (
         "Audio Meeting",
         transcript,
         summary,
+        "",
         datetime.now().isoformat()
     ))
 
@@ -1032,14 +1165,23 @@ def create_meeting():
 
     conn = get_db()
 
+    # IMPORTANT:
+    # participants explicitly supplied.
     cursor = conn.execute("""
         INSERT INTO meetings
-        (title, transcript, summary, created_at)
-        VALUES (?, ?, ?, ?)
+        (
+            title,
+            transcript,
+            summary,
+            participants,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?)
     """, (
         title,
         transcript,
         summary,
+        "",
         datetime.now().isoformat()
     ))
 
@@ -1079,7 +1221,10 @@ def meeting_page(meeting_id):
 
     if not meeting:
 
-        return "Meeting not found", 404
+        return (
+            "Meeting not found",
+            404
+        )
 
     return render_template(
         "transcription.html",
@@ -1108,7 +1253,11 @@ def analyze():
         )
 
     try:
-        meeting_id = int(meeting_id)
+
+        meeting_id = int(
+            meeting_id
+        )
+
     except ValueError:
 
         return redirect(
@@ -1129,19 +1278,21 @@ def analyze():
 
     if not meeting:
 
-        return "Meeting not found", 404
+        return (
+            "Meeting not found",
+            404
+        )
 
-    transcript = meeting["transcript"] or ""
+    transcript = (
+        meeting["transcript"]
+        or ""
+    )
 
     tasks = extract_tasks(
         transcript
     )
 
-    # -----------------------------------------------------
-    # IMPORTANT:
-    # Delete ONLY this meeting's old tasks.
-    # -----------------------------------------------------
-
+    # Delete only this meeting's old tasks.
     delete_meeting_tasks(
         meeting_id
     )
@@ -1198,11 +1349,6 @@ def analyze():
         f"Tasks detected: {len(tasks)}"
     )
 
-    # -----------------------------------------------------
-    # IMPORTANT:
-    # Dashboard will show latest meeting only.
-    # -----------------------------------------------------
-
     return redirect(
         url_for(
             "dashboard",
@@ -1224,23 +1370,21 @@ def dashboard():
 
     conn = get_db()
 
-    # -----------------------------------------------------
-    # If meeting_id is supplied, show that meeting.
-    # Otherwise show latest meeting.
-    # -----------------------------------------------------
+    meeting_id = None
 
     if requested_meeting_id:
 
         try:
+
             meeting_id = int(
                 requested_meeting_id
             )
+
         except ValueError:
+
             meeting_id = None
 
-    else:
-        meeting_id = None
-
+    # If no meeting ID, use newest meeting.
     if meeting_id is None:
 
         latest_meeting = conn.execute("""
@@ -1251,10 +1395,14 @@ def dashboard():
         """).fetchone()
 
         if latest_meeting:
-            meeting_id = latest_meeting["id"]
+
+            meeting_id = (
+                latest_meeting["id"]
+            )
 
     # -----------------------------------------------------
-    # ONLY latest selected meeting tasks
+    # IMPORTANT:
+    # Only selected/latest meeting tasks.
     # -----------------------------------------------------
 
     if meeting_id:
@@ -1289,7 +1437,7 @@ def dashboard():
         )).fetchone()
 
     # -----------------------------------------------------
-    # Dashboard counts
+    # Counts
     # -----------------------------------------------------
 
     total_tasks = len(tasks)
@@ -1297,20 +1445,22 @@ def dashboard():
     pending_tasks = sum(
         1
         for task in tasks
-        if (task["status"] or "Pending").lower()
-        == "pending"
+        if (
+            task["status"]
+            or "Pending"
+        ).lower() == "pending"
     )
 
     completed_tasks = sum(
         1
         for task in tasks
-        if (task["status"] or "").lower()
-        == "completed"
+        if (
+            task["status"]
+            or ""
+        ).lower() == "completed"
     )
 
-    # Overdue calculation remains simple.
-    # Deadline text such as Friday/Tomorrow is
-    # displayed but not falsely marked overdue.
+    # Do not falsely mark text deadlines as overdue.
     overdue_tasks = 0
 
     conn.close()
@@ -1391,12 +1541,13 @@ def complete_task(task_id):
             or "Pending"
         )
 
-        new_status = (
-            "Completed"
-            if current_status.lower()
-            != "completed"
-            else "Pending"
-        )
+        if current_status.lower() != "completed":
+
+            new_status = "Completed"
+
+        else:
+
+            new_status = "Pending"
 
         conn.execute("""
             UPDATE tasks
