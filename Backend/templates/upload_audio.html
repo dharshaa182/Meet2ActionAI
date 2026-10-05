@@ -1,23 +1,27 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+
 <head>
-    <title>Upload Meeting Audio</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Upload Meeting Audio - Meet2Action AI</title>
 
     <style>
         body {
             font-family: Arial, sans-serif;
             background: #f4f6f8;
             margin: 0;
-            padding: 40px;
+            padding: 40px 20px;
         }
 
         .container {
             max-width: 600px;
-            margin: auto;
+            margin: 60px auto;
             background: white;
             padding: 35px;
             border-radius: 15px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
             text-align: center;
         }
 
@@ -27,6 +31,7 @@
 
         p {
             color: #666;
+            line-height: 1.5;
         }
 
         input[type="file"] {
@@ -35,6 +40,7 @@
             width: 90%;
             border: 1px solid #ccc;
             border-radius: 8px;
+            background: #fafafa;
         }
 
         button {
@@ -51,11 +57,44 @@
             background: #333;
         }
 
+        button:disabled {
+            background: #777;
+            cursor: not-allowed;
+        }
+
         .back {
             display: block;
             margin-top: 25px;
             text-decoration: none;
             color: #333;
+        }
+
+        .loading {
+            display: none;
+            margin-top: 25px;
+            padding: 15px;
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .spinner {
+            width: 25px;
+            height: 25px;
+            border: 3px solid #ddd;
+            border-top: 3px solid #111;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
         }
     </style>
 </head>
@@ -67,10 +106,16 @@
     <h1>🎙️ Upload Meeting Audio</h1>
 
     <p>
-        Upload your meeting recording to process it with Meet2Action.
+        Upload your meeting recording to process it with
+        <strong>Meet2Action AI</strong>.
     </p>
 
-    <form action="/upload_audio" method="POST" enctype="multipart/form-data">
+    <form
+        action="/upload_audio"
+        method="POST"
+        enctype="multipart/form-data"
+        onsubmit="showLoading()"
+    >
 
         <input
             type="file"
@@ -81,17 +126,67 @@
 
         <br>
 
-        <button type="submit">
+        <button
+            type="submit"
+            id="uploadBtn"
+        >
             Upload Audio
         </button>
 
     </form>
 
-    <a class="back" href="/">
+    <div
+        class="loading"
+        id="loading"
+    >
+
+        <div class="spinner"></div>
+
+        <strong>
+            Processing your meeting...
+        </strong>
+
+        <p>
+            Meet2Action AI is converting your
+            audio into transcript.
+        </p>
+
+        <small>
+            Please don't close this page.
+        </small>
+
+    </div>
+
+    <a
+        class="back"
+        href="/"
+    >
         ← Back to Home
     </a>
 
 </div>
 
+<script>
+
+function showLoading() {
+
+    const button =
+        document.getElementById("uploadBtn");
+
+    const loading =
+        document.getElementById("loading");
+
+    button.disabled = true;
+
+    button.innerText =
+        "Processing...";
+
+    loading.style.display =
+        "block";
+}
+
+</script>
+
 </body>
+
 </html>
