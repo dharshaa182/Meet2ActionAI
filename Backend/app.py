@@ -79,12 +79,15 @@ def transcribe_audio(file_path):
     transcript_parts = []
 
     for segment in segments:
+
         text = segment.text.strip()
 
         if text:
             transcript_parts.append(text)
 
-    transcript = " ".join(transcript_parts).strip()
+    transcript = " ".join(
+        transcript_parts
+    ).strip()
 
     print("Transcription completed.")
 
@@ -205,7 +208,10 @@ def detect_deadline(text):
 
     for pattern in patterns:
 
-        match = re.search(pattern, text_lower)
+        match = re.search(
+            pattern,
+            text_lower
+        )
 
         if match:
             return match.group(0).title()
@@ -335,7 +341,9 @@ def extract_tasks(transcript, meeting_id):
             continue
 
         owner = detect_owner(sentence)
+
         deadline = detect_deadline(sentence)
+
         priority = detect_priority(sentence)
 
         cursor.execute("""
@@ -390,7 +398,9 @@ def detect_participants(transcript):
 @app.route("/")
 def home():
 
-    return render_template("index.html")
+    return render_template(
+        "index.html"
+    )
 
 
 # ============================================================
@@ -400,7 +410,9 @@ def home():
 @app.route("/upload_audio", methods=["GET"])
 def upload_audio_page():
 
-    return render_template("upload_audio.html")
+    return render_template(
+        "upload_audio.html"
+    )
 
 
 # ============================================================
@@ -449,12 +461,17 @@ def upload_audio():
         file.save(file_path)
 
         print("Audio saved.")
+
         print("Starting transcription...")
 
-        transcript = transcribe_audio(file_path)
+        transcript = transcribe_audio(
+            file_path
+        )
 
         if not transcript:
-            transcript = "No speech detected in this audio."
+            transcript = (
+                "No speech detected in this audio."
+            )
 
         participants = detect_participants(
             transcript
@@ -472,6 +489,7 @@ def upload_audio():
         )
 
         conn = get_db()
+
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -485,7 +503,7 @@ def upload_audio():
             )
             VALUES (?, ?, ?, ?, ?)
         """, (
-            "Untitled Meeting",
+            "Audio Meeting",
             participant_text,
             transcript,
             summary,
@@ -497,6 +515,7 @@ def upload_audio():
         meeting_id = cursor.lastrowid
 
         conn.commit()
+
         conn.close()
 
         extract_tasks(
@@ -510,7 +529,10 @@ def upload_audio():
 
     except Exception as e:
 
-        print("UPLOAD ERROR:", str(e))
+        print(
+            "UPLOAD ERROR:",
+            str(e)
+        )
 
         return f"""
         <h2>Audio processing failed</h2>
@@ -524,19 +546,30 @@ def upload_audio():
 
             try:
                 os.remove(file_path)
+
             except Exception:
                 pass
 
 
 # ============================================================
-# MANUAL MEETING NOTES
+# MANUAL MEETING / ANALYZE
 # ============================================================
 
-@app.route("/meeting", methods=["GET", "POST"])
+@app.route(
+    "/meeting",
+    methods=["GET", "POST"]
+)
 def meeting():
 
     if request.method == "GET":
-        return render_template("meeting.html")
+
+        return render_template(
+            "meeting.html"
+        )
+
+    # -----------------------------
+    # GET FORM DATA
+    # -----------------------------
 
     notes = request.form.get(
         "notes",
@@ -545,24 +578,58 @@ def meeting():
 
     title = request.form.get(
         "title",
-        "Untitled Meeting"
+        "Audio Meeting"
     ).strip()
 
+    participants = request.form.get(
+        "participants",
+        ""
+    ).strip()
+
+    # -----------------------------
+    # VALIDATION
+    # -----------------------------
+
     if not notes:
-        return "Please enter meeting notes.", 400
 
-    participants = detect_participants(notes)
+        return (
+            "Please enter meeting notes.",
+            400
+        )
 
-    participant_text = ", ".join(
-        participants
+    if not title:
+
+        title = "Audio Meeting"
+
+    # -----------------------------
+    # PARTICIPANTS
+    # -----------------------------
+
+    if not participants:
+
+        detected = detect_participants(
+            notes
+        )
+
+        participants = (
+            ", ".join(detected)
+            or "Not detected"
+        )
+
+    # -----------------------------
+    # SUMMARY
+    # -----------------------------
+
+    summary = generate_summary(
+        notes
     )
 
-    if not participant_text:
-        participant_text = "Not detected"
-
-    summary = generate_summary(notes)
+    # -----------------------------
+    # SAVE MEETING
+    # -----------------------------
 
     conn = get_db()
+
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -577,7 +644,7 @@ def meeting():
         VALUES (?, ?, ?, ?, ?)
     """, (
         title,
-        participant_text,
+        participants,
         notes,
         summary,
         datetime.now().strftime(
@@ -588,15 +655,29 @@ def meeting():
     meeting_id = cursor.lastrowid
 
     conn.commit()
+
     conn.close()
+
+    # -----------------------------
+    # EXTRACT TASKS
+    # -----------------------------
 
     extract_tasks(
         notes,
         meeting_id
     )
 
+    # -----------------------------
+    # IMPORTANT FIX
+    # -----------------------------
+    # After Analyze Meeting,
+    # go directly to Dashboard.
+    # This prevents the same
+    # transcription page from
+    # appearing again.
+
     return redirect(
-        f"/meeting/{meeting_id}"
+        "/dashboard"
     )
 
 
@@ -604,7 +685,9 @@ def meeting():
 # MEETING DETAILS
 # ============================================================
 
-@app.route("/meeting/<int:meeting_id>")
+@app.route(
+    "/meeting/<int:meeting_id>"
+)
 def meeting_details(meeting_id):
 
     conn = get_db()
@@ -629,7 +712,11 @@ def meeting_details(meeting_id):
     conn.close()
 
     if not meeting_data:
-        return "Meeting not found.", 404
+
+        return (
+            "Meeting not found.",
+            404
+        )
 
     return render_template(
         "transcription.html",
@@ -665,10 +752,12 @@ def update_owner(task_id):
     ))
 
     conn.commit()
+
     conn.close()
 
     return redirect(
-        request.referrer or "/dashboard"
+        request.referrer
+        or "/dashboard"
     )
 
 
@@ -746,7 +835,9 @@ def dashboard():
 # COMPLETE TASK
 # ============================================================
 
-@app.route("/complete/<int:task_id>")
+@app.route(
+    "/complete/<int:task_id>"
+)
 def complete_task(task_id):
 
     conn = get_db()
@@ -760,10 +851,12 @@ def complete_task(task_id):
     ))
 
     conn.commit()
+
     conn.close()
 
     return redirect(
-        request.referrer or "/dashboard"
+        request.referrer
+        or "/dashboard"
     )
 
 
@@ -815,16 +908,24 @@ def problems():
 
 
 # ============================================================
-# ANALYZE
+# ANALYZE AUDIO
 # ============================================================
 
-@app.route("/analyze", methods=["POST"])
+@app.route(
+    "/analyze",
+    methods=["POST"]
+)
 def analyze():
 
-    file = request.files.get("audio")
+    file = request.files.get(
+        "audio"
+    )
 
     if not file or file.filename == "":
-        return "No audio file selected.", 400
+        return (
+            "No audio file selected.",
+            400
+        )
 
     extension = os.path.splitext(
         file.filename
@@ -841,7 +942,10 @@ def analyze():
     ]
 
     if extension not in allowed_extensions:
-        return "Unsupported audio format.", 400
+        return (
+            "Unsupported audio format.",
+            400
+        )
 
     filename = (
         uuid.uuid4().hex +
@@ -855,14 +959,25 @@ def analyze():
 
     try:
 
+        print(
+            "Saving audio for analysis..."
+        )
+
         file.save(file_path)
+
+        print(
+            "Starting analysis..."
+        )
 
         transcript = transcribe_audio(
             file_path
         )
 
         if not transcript:
-            transcript = "No speech detected."
+
+            transcript = (
+                "No speech detected."
+            )
 
         summary = generate_summary(
             transcript
@@ -872,11 +987,13 @@ def analyze():
             transcript
         )
 
-        participant_text = ", ".join(
-            participants
-        ) or "Not detected"
+        participant_text = (
+            ", ".join(participants)
+            or "Not detected"
+        )
 
         conn = get_db()
+
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -902,6 +1019,7 @@ def analyze():
         meeting_id = cursor.lastrowid
 
         conn.commit()
+
         conn.close()
 
         extract_tasks(
@@ -910,17 +1028,22 @@ def analyze():
         )
 
         return redirect(
-            f"/meeting/{meeting_id}"
+            "/dashboard"
         )
 
     except Exception as e:
 
-        print("ANALYZE ERROR:", str(e))
+        print(
+            "ANALYZE ERROR:",
+            str(e)
+        )
 
         return f"""
         <h2>Analysis failed</h2>
         <p>{str(e)}</p>
-        <a href="/upload_audio">Go Back</a>
+        <a href="/upload_audio">
+        Go Back
+        </a>
         """, 500
 
     finally:
@@ -929,6 +1052,7 @@ def analyze():
 
             try:
                 os.remove(file_path)
+
             except Exception:
                 pass
 
@@ -972,8 +1096,13 @@ def file_too_large(error):
 
     return """
     <h2>File too large</h2>
-    <p>Please upload an audio file smaller than 25 MB.</p>
-    <a href="/upload_audio">Go Back</a>
+    <p>
+    Please upload an audio file
+    smaller than 25 MB.
+    </p>
+    <a href="/upload_audio">
+    Go Back
+    </a>
     """, 413
 
 
@@ -983,7 +1112,9 @@ def internal_error(error):
     return """
     <h2>Something went wrong</h2>
     <p>Please try again.</p>
-    <a href="/">Go Home</a>
+    <a href="/">
+    Go Home
+    </a>
     """, 500
 
 
