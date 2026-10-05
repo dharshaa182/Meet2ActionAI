@@ -134,7 +134,7 @@ def init_db():
     """)
 
     # -----------------------------------------------------
-    # Safe migration for old meetings database
+    # Meeting migrations
     # -----------------------------------------------------
 
     meeting_columns = [
@@ -222,7 +222,7 @@ def init_db():
             )
 
     # -----------------------------------------------------
-    # Existing NULL participants safety
+    # NULL safety
     # -----------------------------------------------------
 
     try:
@@ -236,10 +236,6 @@ def init_db():
             "Participants cleanup warning:",
             repr(e)
         )
-
-    # -----------------------------------------------------
-    # Existing NULL status safety
-    # -----------------------------------------------------
 
     try:
         cur.execute("""
@@ -330,7 +326,7 @@ def normalize_task(task):
 
     task = clean_text(task)
 
-    # Remove self assignment prefix
+    # Self assignment
     task = re.sub(
         r"^(?:"
         r"i\s+(?:will|shall|can|am going to)\s+|"
@@ -343,7 +339,7 @@ def normalize_task(task):
         flags=re.I
     )
 
-    # Remove named-person assignment prefix
+    # Named-person assignment
     task = re.sub(
         r"^[A-Za-z][A-Za-z0-9_-]*\s+"
         r"(?:will|shall|can|is going to|has to|needs to|must)\s+",
@@ -352,7 +348,7 @@ def normalize_task(task):
         flags=re.I
     )
 
-    # Remove common task prefixes
+    # Common task prefixes
     task = re.sub(
         r"^(?:"
         r"we need to|"
@@ -663,7 +659,7 @@ def is_ignored_sentence(sentence):
         if phrase in text:
             return True
 
-    # Questions are discussion, not action items
+    # Questions are discussion
     if text.endswith("?"):
         return True
 
@@ -715,7 +711,7 @@ def is_real_task(sentence):
     ):
         return True
 
-    # Task verbs
+    # Action verbs
     action_verbs = [
         "prepare",
         "complete",
@@ -774,7 +770,7 @@ def split_sentences(transcript):
     if not text:
         return []
 
-    # Help Whisper output split into assignment sentences.
+    # Split Whisper output around common assignments
     text = re.sub(
         r"\s+(?=(?:I|We|They|The team|[A-Z][a-z]+)\s+"
         r"(?:will|shall|can|must|needs to|has to)\b)",
@@ -1092,9 +1088,6 @@ def upload_audio():
 
     conn = get_db()
 
-    # IMPORTANT:
-    # participants is explicitly inserted
-    # because existing database has NOT NULL constraint.
     cursor = conn.execute("""
         INSERT INTO meetings
         (
@@ -1165,8 +1158,6 @@ def create_meeting():
 
     conn = get_db()
 
-    # IMPORTANT:
-    # participants explicitly supplied.
     cursor = conn.execute("""
         INSERT INTO meetings
         (
@@ -1234,15 +1225,17 @@ def meeting_page(meeting_id):
 
 # =========================================================
 # ANALYZE
+# IMPORTANT: GET + POST
 # =========================================================
 
 @app.route(
     "/analyze",
-    methods=["POST"]
+    methods=["GET", "POST"]
 )
 def analyze():
 
-    meeting_id = request.form.get(
+    # Accept meeting_id from GET or POST
+    meeting_id = request.values.get(
         "meeting_id"
     )
 
@@ -1258,7 +1251,7 @@ def analyze():
             meeting_id
         )
 
-    except ValueError:
+    except (ValueError, TypeError):
 
         return redirect(
             url_for("home")
@@ -1288,11 +1281,12 @@ def analyze():
         or ""
     )
 
+    # Extract tasks
     tasks = extract_tasks(
         transcript
     )
 
-    # Delete only this meeting's old tasks.
+    # Delete old tasks ONLY for this meeting
     delete_meeting_tasks(
         meeting_id
     )
@@ -1325,6 +1319,7 @@ def analyze():
             now
         ))
 
+    # Update summary
     summary = generate_summary(
         transcript
     )
@@ -1349,6 +1344,7 @@ def analyze():
         f"Tasks detected: {len(tasks)}"
     )
 
+    # Go directly to selected meeting dashboard
     return redirect(
         url_for(
             "dashboard",
@@ -1380,11 +1376,11 @@ def dashboard():
                 requested_meeting_id
             )
 
-        except ValueError:
+        except (ValueError, TypeError):
 
             meeting_id = None
 
-    # If no meeting ID, use newest meeting.
+    # No ID = latest meeting
     if meeting_id is None:
 
         latest_meeting = conn.execute("""
@@ -1396,15 +1392,9 @@ def dashboard():
 
         if latest_meeting:
 
-            meeting_id = (
-                latest_meeting["id"]
-            )
+            meeting_id = latest_meeting["id"]
 
-    # -----------------------------------------------------
-    # IMPORTANT:
-    # Only selected/latest meeting tasks.
-    # -----------------------------------------------------
-
+    # Only selected meeting tasks
     if meeting_id:
 
         tasks = conn.execute("""
@@ -1420,10 +1410,7 @@ def dashboard():
 
         tasks = []
 
-    # -----------------------------------------------------
     # Current meeting
-    # -----------------------------------------------------
-
     meeting = None
 
     if meeting_id:
@@ -1436,10 +1423,7 @@ def dashboard():
             meeting_id,
         )).fetchone()
 
-    # -----------------------------------------------------
     # Counts
-    # -----------------------------------------------------
-
     total_tasks = len(tasks)
 
     pending_tasks = sum(
@@ -1460,7 +1444,7 @@ def dashboard():
         ).lower() == "completed"
     )
 
-    # Do not falsely mark text deadlines as overdue.
+    # Text deadlines are not automatically overdue
     overdue_tasks = 0
 
     conn.close()
