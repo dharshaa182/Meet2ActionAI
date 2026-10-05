@@ -1,125 +1,236 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Meet2Action - AI Meeting Accountability</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Meet2Action AI</title>
 
     <style>
-        body {
+        * {
+            box-sizing: border-box;
             margin: 0;
-            font-family: Arial, sans-serif;
-            background: #f5f7fb;
-            color: #111;
+            padding: 0;
         }
 
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f5f7fb;
+            color: #172033;
+        }
+
+        /* NAVBAR */
+
         .navbar {
-            background: #111;
+            background: #111827;
             color: white;
-            padding: 18px 8%;
+            padding: 18px 6%;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
         .logo {
-            font-size: 24px;
+            font-size: 25px;
             font-weight: bold;
         }
 
-        .nav a {
+        .nav-links {
+            display: flex;
+            gap: 25px;
+        }
+
+        .nav-links a {
             color: white;
             text-decoration: none;
-            margin-left: 20px;
+            font-size: 15px;
         }
+
+        .nav-links a:hover {
+            opacity: 0.75;
+        }
+
+        /* HERO */
 
         .hero {
             text-align: center;
-            padding: 75px 20px 55px;
+            padding: 75px 20px 45px;
         }
 
         .hero h1 {
             font-size: 48px;
             margin-bottom: 15px;
+            color: #111827;
         }
 
-        .hero span {
-            color: #555;
+        .hero h1 span {
+            color: #2563eb;
         }
 
         .hero p {
-            font-size: 18px;
-            color: #666;
-            max-width: 650px;
+            max-width: 750px;
             margin: auto;
-            line-height: 1.6;
+            font-size: 18px;
+            line-height: 1.7;
+            color: #5b6475;
         }
 
-        .buttons {
-            margin-top: 30px;
+        /* ACTION AREA */
+
+        .action-area {
+            max-width: 950px;
+            margin: 20px auto 50px;
+            padding: 0 20px;
         }
 
-        .btn {
-            display: inline-block;
-            padding: 14px 25px;
-            margin: 8px;
-            border-radius: 9px;
-            text-decoration: none;
-            font-weight: bold;
-        }
-
-        .primary {
-            background: #111;
-            color: white;
-        }
-
-        .secondary {
+        .action-card {
             background: white;
-            color: #111;
-            border: 1px solid #ddd;
+            border-radius: 20px;
+            padding: 35px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+            margin-bottom: 25px;
         }
+
+        .action-card h2 {
+            text-align: center;
+            margin-bottom: 25px;
+            color: #111827;
+        }
+
+        /* UPLOAD FORM */
+
+        .upload-form {
+            border: 2px dashed #cbd5e1;
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            background: #f8fafc;
+        }
+
+        .upload-form input[type="file"] {
+            display: block;
+            width: 100%;
+            margin: 0 auto 20px;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            background: white;
+        }
+
+        .upload-btn {
+            border: none;
+            background: #2563eb;
+            color: white;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .upload-btn:hover {
+            background: #1d4ed8;
+        }
+
+        /* NOTES */
+
+        .notes-form textarea {
+            width: 100%;
+            min-height: 180px;
+            resize: vertical;
+            padding: 15px;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            font-size: 15px;
+            font-family: Arial, sans-serif;
+            margin-bottom: 15px;
+        }
+
+        .notes-btn {
+            width: 100%;
+            border: none;
+            background: #111827;
+            color: white;
+            padding: 14px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .notes-btn:hover {
+            background: #1f2937;
+        }
+
+        /* FEATURES */
 
         .features {
-            max-width: 1000px;
-            margin: auto;
-            padding: 20px;
+            max-width: 1100px;
+            margin: 0 auto 70px;
+            padding: 0 20px;
+        }
+
+        .features h2 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .feature-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 20px;
         }
 
-        .card {
+        .feature {
             background: white;
             padding: 25px;
-            border-radius: 14px;
-            box-shadow: 0 3px 12px rgba(0,0,0,0.08);
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.06);
         }
 
-        .card h3 {
-            margin-top: 0;
+        .feature-icon {
+            font-size: 32px;
+            margin-bottom: 12px;
         }
 
-        .card p {
-            color: #666;
-            line-height: 1.5;
+        .feature h3 {
+            margin-bottom: 8px;
         }
 
-        .footer {
+        .feature p {
+            color: #64748b;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        /* FOOTER */
+
+        footer {
+            background: #111827;
+            color: white;
             text-align: center;
-            margin-top: 60px;
             padding: 25px;
-            color: #777;
         }
 
-        @media (max-width: 700px) {
-            .features {
-                grid-template-columns: 1fr;
-            }
+        /* MOBILE */
+
+        @media (max-width: 800px) {
 
             .hero h1 {
                 font-size: 36px;
             }
 
-            .nav a {
-                margin-left: 8px;
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .navbar {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .nav-links {
+                gap: 15px;
             }
         }
     </style>
@@ -127,16 +238,25 @@
 
 <body>
 
-    <div class="navbar">
-        <div class="logo">Meet2Action</div>
+    <!-- NAVBAR -->
 
-        <div class="nav">
+    <nav class="navbar">
+
+        <div class="logo">
+            Meet2Action AI
+        </div>
+
+        <div class="nav-links">
+            <a href="/">Home</a>
             <a href="/dashboard">Dashboard</a>
             <a href="/history">History</a>
             <a href="/notifications">🔔</a>
         </div>
-    </div>
 
+    </nav>
+
+
+    <!-- HERO -->
 
     <section class="hero">
 
@@ -145,83 +265,222 @@
         </h1>
 
         <p>
-            Meet2Action uses AI-powered meeting transcription
-            and analysis to convert conversations into
-            actionable tasks, responsibilities, deadlines,
-            and priorities.
+            Meet2Action AI converts meeting conversations into
+            clear tasks, assigns responsibilities, identifies
+            deadlines and helps teams stay accountable.
         </p>
 
-        <div class="buttons">
+    </section>
 
-            <a class="btn primary" href="/upload_audio">
+
+    <!-- ACTION AREA -->
+
+    <section class="action-area">
+
+        <!-- AUDIO UPLOAD -->
+
+        <div class="action-card">
+
+            <h2>
                 🎙️ Upload Meeting Audio
-            </a>
+            </h2>
 
-            <a class="btn secondary" href="/meeting">
+            <!-- IMPORTANT:
+                 This MUST be a POST form.
+                 Do NOT change it to href="/upload_audio".
+            -->
+
+            <form
+                class="upload-form"
+                action="/upload_audio"
+                method="POST"
+                enctype="multipart/form-data"
+            >
+
+                <input
+                    type="file"
+                    name="audio"
+                    accept="audio/*,video/*"
+                    required
+                >
+
+                <button
+                    type="submit"
+                    class="upload-btn"
+                >
+                    🚀 Upload & Transcribe
+                </button>
+
+            </form>
+
+        </div>
+
+
+        <!-- MEETING NOTES -->
+
+        <div class="action-card">
+
+            <h2>
                 📝 Enter Meeting Notes
-            </a>
+            </h2>
+
+            <form
+                class="notes-form"
+                action="/meeting"
+                method="POST"
+            >
+
+                <textarea
+                    name="notes"
+                    placeholder="Enter your meeting notes here..."
+                    required
+                ></textarea>
+
+                <button
+                    type="submit"
+                    class="notes-btn"
+                >
+                    🤖 Analyze Meeting Notes
+                </button>
+
+            </form>
 
         </div>
 
     </section>
 
+
+    <!-- FEATURES -->
 
     <section class="features">
 
-        <div class="card">
-            <h3>🎙️ Smart Transcription</h3>
-            <p>
-                Convert meeting audio into text automatically
-                using local AI transcription.
-            </p>
-        </div>
+        <h2>
+            ⚡ Meet2Action Features
+        </h2>
 
-        <div class="card">
-            <h3>🤖 Meeting Analysis</h3>
-            <p>
-                Extract action items, responsibilities,
-                deadlines and priorities from meetings.
-            </p>
-        </div>
+        <div class="feature-grid">
 
-        <div class="card">
-            <h3>📊 Accountability Dashboard</h3>
-            <p>
-                Track pending, completed and overdue tasks
-                in one simple dashboard.
-            </p>
-        </div>
+            <div class="feature">
 
-        <div class="card">
-            <h3>👤 Responsibility</h3>
-            <p>
-                Identify who is responsible for each
-                action item from the meeting context.
-            </p>
-        </div>
+                <div class="feature-icon">
+                    🎙️
+                </div>
 
-        <div class="card">
-            <h3>📅 Deadline Tracking</h3>
-            <p>
-                Detect deadlines and monitor tasks
-                that need attention.
-            </p>
-        </div>
+                <h3>
+                    AI Transcription
+                </h3>
 
-        <div class="card">
-            <h3>🔔 Notifications</h3>
-            <p>
-                View pending and overdue tasks through
-                the notification system.
-            </p>
+                <p>
+                    Converts meeting audio into readable
+                    text using AI-powered speech recognition.
+                </p>
+
+            </div>
+
+
+            <div class="feature">
+
+                <div class="feature-icon">
+                    🤖
+                </div>
+
+                <h3>
+                    Smart Analysis
+                </h3>
+
+                <p>
+                    Identifies meaningful action items
+                    from meeting conversations.
+                </p>
+
+            </div>
+
+
+            <div class="feature">
+
+                <div class="feature-icon">
+                    👤
+                </div>
+
+                <h3>
+                    Responsibility
+                </h3>
+
+                <p>
+                    Detects who is responsible for each
+                    task mentioned during the meeting.
+                </p>
+
+            </div>
+
+
+            <div class="feature">
+
+                <div class="feature-icon">
+                    📅
+                </div>
+
+                <h3>
+                    Deadlines
+                </h3>
+
+                <p>
+                    Detects dates and deadline information
+                    from meeting discussions.
+                </p>
+
+            </div>
+
+
+            <div class="feature">
+
+                <div class="feature-icon">
+                    📊
+                </div>
+
+                <h3>
+                    Team Dashboard
+                </h3>
+
+                <p>
+                    View tasks, owners, priorities and
+                    completion status in one dashboard.
+                </p>
+
+            </div>
+
+
+            <div class="feature">
+
+                <div class="feature-icon">
+                    🔔
+                </div>
+
+                <h3>
+                    Accountability
+                </h3>
+
+                <p>
+                    Helps teams track pending and completed
+                    actions after every meeting.
+                </p>
+
+            </div>
+
         </div>
 
     </section>
 
 
-    <div class="footer">
-        Meet2Action — AI Meeting-to-Accountability System
-    </div>
+    <!-- FOOTER -->
+
+    <footer>
+
+        <p>
+            Meet2Action AI • Team Infinite Loop
+        </p>
+
+    </footer>
 
 </body>
 </html>
