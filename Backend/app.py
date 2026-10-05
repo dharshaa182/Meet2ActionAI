@@ -79,7 +79,6 @@ def transcribe_audio(file_path):
     transcript_parts = []
 
     for segment in segments:
-
         text = segment.text.strip()
 
         if text:
@@ -149,9 +148,6 @@ def init_db():
     conn.close()
 
 
-init_db()
-
-
 # ============================================================
 # PEOPLE
 # ============================================================
@@ -180,6 +176,13 @@ def detect_owner(text):
         if person.lower() in text_lower:
             return person
 
+    # First-person assignment
+    if re.search(
+        r"\b(i will|i'll|i can|i am going to)\b",
+        text_lower
+    ):
+        return "Self"
+
     return "Unassigned"
 
 
@@ -192,7 +195,9 @@ def detect_deadline(text):
     text_lower = text.lower()
 
     patterns = [
+        r"\bby today\b",
         r"\btoday\b",
+        r"\bby tomorrow\b",
         r"\btomorrow\b",
         r"\btonight\b",
         r"\bthis week\b",
@@ -233,7 +238,8 @@ def detect_priority(text):
         "important",
         "asap",
         "immediately",
-        "critical"
+        "critical",
+        "emergency"
     ]
 
     for word in high_words:
@@ -243,7 +249,8 @@ def detect_priority(text):
 
     medium_words = [
         "soon",
-        "this week"
+        "this week",
+        "priority"
     ]
 
     for word in medium_words:
@@ -284,7 +291,7 @@ def generate_summary(transcript):
 
 
 # ============================================================
-# TASK EXTRACTION
+# SMART TASK EXTRACTION
 # ============================================================
 
 def extract_tasks(transcript, meeting_id):
@@ -297,31 +304,119 @@ def extract_tasks(transcript, meeting_id):
         transcript.strip()
     )
 
-    action_words = [
-        "will",
-        "should",
-        "need to",
-        "needs to",
-        "must",
-        "complete",
-        "prepare",
-        "finish",
-        "submit",
-        "create",
-        "develop",
-        "design",
-        "test",
-        "check",
-        "send",
-        "update",
-        "review",
-        "handle",
-        "work on",
-        "do"
+    # --------------------------------------------------------
+    # Real action phrases
+    # --------------------------------------------------------
+
+    action_patterns = [
+
+        # Personal commitments
+        r"\bi will\b",
+        r"\bi'll\b",
+        r"\bi can\b",
+        r"\bi am going to\b",
+
+        # Team commitments
+        r"\bwe will\b",
+        r"\bwe'll\b",
+        r"\bwe need to\b",
+        r"\bwe have to\b",
+
+        # Assignment / responsibility
+        r"\bassigned to\b",
+        r"\bresponsible for\b",
+        r"\bhas to\b",
+        r"\bhave to\b",
+        r"\bneeds to\b",
+        r"\bneed to\b",
+        r"\bmust\b",
+
+        # Direct actions
+        r"\bprepare\b",
+        r"\bcreate\b",
+        r"\bdevelop\b",
+        r"\bdesign\b",
+        r"\bsubmit\b",
+        r"\bcomplete\b",
+        r"\bfinish\b",
+        r"\btest\b",
+        r"\breview\b",
+        r"\bcheck\b",
+        r"\bsend\b",
+        r"\bupdate\b",
+        r"\borganize\b",
+        r"\bcollect\b",
+        r"\bimplement\b",
+        r"\bbuild\b",
+        r"\bfix\b",
+        r"\bfinalize\b",
+        r"\bpresent\b",
+        r"\bprepare\b",
+        r"\binstall\b",
+        r"\bdeploy\b",
+        r"\bdocument\b"
+    ]
+
+    # --------------------------------------------------------
+    # General / useless statements
+    # --------------------------------------------------------
+
+    blocked_patterns = [
+
+        r"^\s*where\b",
+        r"^\s*what\b",
+        r"^\s*when\b",
+        r"^\s*who\b",
+        r"^\s*why\b",
+        r"^\s*how\b",
+
+        r"\bwhere should\b",
+        r"\bwhat should\b",
+        r"\bwhen should\b",
+        r"\bwhy should\b",
+        r"\bhow should\b",
+
+        r"\bi think\b",
+        r"\bi believe\b",
+        r"\bi feel\b",
+
+        r"\bcommunication will be important\b",
+        r"\bwill be important\b",
+
+        r"\bwe should also update\b",
+        r"\bwe should share updates\b",
+        r"\bshare updates regularly\b",
+
+        r"\bthat gives us enough time\b",
+        r"\benough time to check\b",
+
+        r"\bmake this project successful\b",
+        r"\bmake this project a success\b",
+
+        r"\bstays informed\b",
+        r"\bstay informed\b",
+
+        r"\bwhat should we focus on\b",
+        r"\bwhen should we finish\b"
+    ]
+
+    # --------------------------------------------------------
+    # Words that indicate a question
+    # --------------------------------------------------------
+
+    question_words = [
+        "where",
+        "what",
+        "when",
+        "who",
+        "why",
+        "how"
     ]
 
     conn = get_db()
     cursor = conn.cursor()
+
+    inserted_tasks = set()
 
     for sentence in sentences:
 
@@ -330,21 +425,168 @@ def extract_tasks(transcript, meeting_id):
         if not sentence:
             continue
 
+        # Normalize spaces
+        sentence = re.sub(
+            r"\s+",
+            " ",
+            sentence
+        ).strip()
+
+        # Too short
+        if len(sentence.split()) < 4:
+            continue
+
         sentence_lower = sentence.lower()
 
-        is_action = any(
-            word in sentence_lower
-            for word in action_words
+        # ----------------------------------------------------
+        # NEVER accept questions
+        # ----------------------------------------------------
+
+        if "?" in sentence:
+            continue
+
+        first_word_match = re.match(
+            r"^\s*([a-zA-Z]+)",
+            sentence_lower
         )
+
+        if first_word_match:
+
+            first_word = first_word_match.group(1)
+
+            if first_word in question_words:
+                continue
+
+        # ----------------------------------------------------
+        # Block useless/general statements
+        # ----------------------------------------------------
+
+        blocked = False
+
+        for pattern in blocked_patterns:
+
+            if re.search(
+                pattern,
+                sentence_lower
+            ):
+                blocked = True
+                break
+
+        if blocked:
+            continue
+
+        # ----------------------------------------------------
+        # Find action
+        # ----------------------------------------------------
+
+        is_action = False
+
+        for pattern in action_patterns:
+
+            if re.search(
+                pattern,
+                sentence_lower
+            ):
+                is_action = True
+                break
 
         if not is_action:
             continue
 
-        owner = detect_owner(sentence)
+        # ----------------------------------------------------
+        # Reject vague statements
+        # ----------------------------------------------------
 
-        deadline = detect_deadline(sentence)
+        vague_phrases = [
+            "should be",
+            "will be",
+            "is important",
+            "are important",
+            "enough time",
+            "stay informed",
+            "share updates regularly",
+            "communication will be"
+        ]
 
-        priority = detect_priority(sentence)
+        if any(
+            phrase in sentence_lower
+            for phrase in vague_phrases
+        ):
+            continue
+
+        # ----------------------------------------------------
+        # Clean task
+        # ----------------------------------------------------
+
+        task_text = sentence.strip()
+
+        task_text = task_text.rstrip(
+            ".!?"
+        )
+
+        if not task_text:
+            continue
+
+        # ----------------------------------------------------
+        # Prevent duplicate tasks
+        # ----------------------------------------------------
+
+        normalized_task = re.sub(
+            r"[^a-z0-9\s]",
+            "",
+            task_text.lower()
+        )
+
+        normalized_task = re.sub(
+            r"\s+",
+            " ",
+            normalized_task
+        ).strip()
+
+        if not normalized_task:
+            continue
+
+        if normalized_task in inserted_tasks:
+            continue
+
+        # Check duplicate inside same meeting
+        cursor.execute("""
+            SELECT id
+            FROM tasks
+            WHERE meeting_id = ?
+            AND LOWER(TRIM(task)) = LOWER(TRIM(?))
+            LIMIT 1
+        """, (
+            meeting_id,
+            task_text
+        ))
+
+        if cursor.fetchone():
+            continue
+
+        inserted_tasks.add(
+            normalized_task
+        )
+
+        # ----------------------------------------------------
+        # Extract metadata
+        # ----------------------------------------------------
+
+        owner = detect_owner(
+            task_text
+        )
+
+        deadline = detect_deadline(
+            task_text
+        )
+
+        priority = detect_priority(
+            task_text
+        )
+
+        # ----------------------------------------------------
+        # Insert task
+        # ----------------------------------------------------
 
         cursor.execute("""
             INSERT INTO tasks
@@ -359,7 +601,7 @@ def extract_tasks(transcript, meeting_id):
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
             meeting_id,
-            sentence,
+            task_text,
             owner,
             deadline,
             priority,
@@ -368,6 +610,69 @@ def extract_tasks(transcript, meeting_id):
 
     conn.commit()
     conn.close()
+
+
+# ============================================================
+# CLEAN OLD JUNK TASKS
+# ============================================================
+
+def cleanup_old_tasks():
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Remove obvious questions
+    cursor.execute("""
+        DELETE FROM tasks
+        WHERE
+            TRIM(task) LIKE 'Where %'
+            OR TRIM(task) LIKE 'What %'
+            OR TRIM(task) LIKE 'When %'
+            OR TRIM(task) LIKE 'Who %'
+            OR TRIM(task) LIKE 'Why %'
+            OR TRIM(task) LIKE 'How %'
+    """)
+
+    # Remove obvious general statements
+    junk_phrases = [
+        "communication will be important",
+        "we should share updates regularly",
+        "we should also update the team about our progress",
+        "that gives us enough time to check our work",
+        "we'll make sure everyone stays informed",
+        "we should share updates regularly",
+        "make this project successful"
+    ]
+
+    for phrase in junk_phrases:
+
+        cursor.execute("""
+            DELETE FROM tasks
+            WHERE LOWER(task) LIKE ?
+        """, (
+            "%" + phrase.lower() + "%",
+        ))
+
+    # --------------------------------------------------------
+    # Remove exact duplicate tasks within the same meeting
+    # Keep newest task.
+    # --------------------------------------------------------
+
+    cursor.execute("""
+        DELETE FROM tasks
+        WHERE id NOT IN (
+            SELECT MAX(id)
+            FROM tasks
+            GROUP BY
+                meeting_id,
+                LOWER(TRIM(task))
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+    print("Old junk/duplicate tasks cleaned.")
 
 
 # ============================================================
@@ -407,7 +712,10 @@ def home():
 # UPLOAD AUDIO PAGE
 # ============================================================
 
-@app.route("/upload_audio", methods=["GET"])
+@app.route(
+    "/upload_audio",
+    methods=["GET"]
+)
 def upload_audio_page():
 
     return render_template(
@@ -419,13 +727,21 @@ def upload_audio_page():
 # UPLOAD AUDIO
 # ============================================================
 
-@app.route("/upload_audio", methods=["POST"])
+@app.route(
+    "/upload_audio",
+    methods=["POST"]
+)
 def upload_audio():
 
-    file = request.files.get("audio")
+    file = request.files.get(
+        "audio"
+    )
 
     if not file or file.filename == "":
-        return "No audio file selected.", 400
+        return (
+            "No audio file selected.",
+            400
+        )
 
     extension = os.path.splitext(
         file.filename
@@ -442,7 +758,11 @@ def upload_audio():
     ]
 
     if extension not in allowed_extensions:
-        return "Unsupported audio format.", 400
+
+        return (
+            "Unsupported audio format.",
+            400
+        )
 
     filename = (
         uuid.uuid4().hex +
@@ -469,6 +789,7 @@ def upload_audio():
         )
 
         if not transcript:
+
             transcript = (
                 "No speech detected in this audio."
             )
@@ -482,6 +803,7 @@ def upload_audio():
         )
 
         if not participant_text:
+
             participant_text = "Not detected"
 
         summary = generate_summary(
@@ -489,7 +811,6 @@ def upload_audio():
         )
 
         conn = get_db()
-
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -515,9 +836,9 @@ def upload_audio():
         meeting_id = cursor.lastrowid
 
         conn.commit()
-
         conn.close()
 
+        # Create smart action items
         extract_tasks(
             transcript,
             meeting_id
@@ -567,10 +888,6 @@ def meeting():
             "meeting.html"
         )
 
-    # -----------------------------
-    # GET FORM DATA
-    # -----------------------------
-
     notes = request.form.get(
         "notes",
         ""
@@ -586,10 +903,6 @@ def meeting():
         ""
     ).strip()
 
-    # -----------------------------
-    # VALIDATION
-    # -----------------------------
-
     if not notes:
 
         return (
@@ -600,10 +913,6 @@ def meeting():
     if not title:
 
         title = "Audio Meeting"
-
-    # -----------------------------
-    # PARTICIPANTS
-    # -----------------------------
 
     if not participants:
 
@@ -616,20 +925,11 @@ def meeting():
             or "Not detected"
         )
 
-    # -----------------------------
-    # SUMMARY
-    # -----------------------------
-
     summary = generate_summary(
         notes
     )
 
-    # -----------------------------
-    # SAVE MEETING
-    # -----------------------------
-
     conn = get_db()
-
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -655,26 +955,12 @@ def meeting():
     meeting_id = cursor.lastrowid
 
     conn.commit()
-
     conn.close()
-
-    # -----------------------------
-    # EXTRACT TASKS
-    # -----------------------------
 
     extract_tasks(
         notes,
         meeting_id
     )
-
-    # -----------------------------
-    # IMPORTANT FIX
-    # -----------------------------
-    # After Analyze Meeting,
-    # go directly to Dashboard.
-    # This prevents the same
-    # transcription page from
-    # appearing again.
 
     return redirect(
         "/dashboard"
@@ -752,7 +1038,6 @@ def update_owner(task_id):
     ))
 
     conn.commit()
-
     conn.close()
 
     return redirect(
@@ -810,6 +1095,7 @@ def dashboard():
         WHERE status = 'Completed'
     """).fetchone()[0]
 
+    # Basic overdue calculation
     overdue_tasks = 0
 
     tasks = conn.execute("""
@@ -851,7 +1137,6 @@ def complete_task(task_id):
     ))
 
     conn.commit()
-
     conn.close()
 
     return redirect(
@@ -942,6 +1227,7 @@ def analyze():
     ]
 
     if extension not in allowed_extensions:
+
         return (
             "Unsupported audio format.",
             400
@@ -993,7 +1279,6 @@ def analyze():
         )
 
         conn = get_db()
-
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -1019,7 +1304,6 @@ def analyze():
         meeting_id = cursor.lastrowid
 
         conn.commit()
-
         conn.close()
 
         extract_tasks(
@@ -1041,9 +1325,7 @@ def analyze():
         return f"""
         <h2>Analysis failed</h2>
         <p>{str(e)}</p>
-        <a href="/upload_audio">
-        Go Back
-        </a>
+        <a href="/upload_audio">Go Back</a>
         """, 500
 
     finally:
@@ -1058,36 +1340,6 @@ def analyze():
 
 
 # ============================================================
-# REPORT
-# ============================================================
-
-@app.route("/report")
-def report():
-
-    conn = get_db()
-
-    meetings = conn.execute("""
-        SELECT *
-        FROM meetings
-        ORDER BY id DESC
-    """).fetchall()
-
-    tasks = conn.execute("""
-        SELECT *
-        FROM tasks
-        ORDER BY id DESC
-    """).fetchall()
-
-    conn.close()
-
-    return render_template(
-        "report.html",
-        meetings=meetings,
-        tasks=tasks
-    )
-
-
-# ============================================================
 # ERROR HANDLERS
 # ============================================================
 
@@ -1095,44 +1347,60 @@ def report():
 def file_too_large(error):
 
     return """
-    <h2>File too large</h2>
-    <p>
-    Please upload an audio file
-    smaller than 25 MB.
-    </p>
-    <a href="/upload_audio">
-    Go Back
-    </a>
+    <h2>File Too Large</h2>
+    <p>Maximum audio file size is 25 MB.</p>
+    <a href="/upload_audio">Upload another file</a>
     """, 413
+
+
+@app.errorhandler(404)
+def page_not_found(error):
+
+    return """
+    <h2>Page Not Found</h2>
+    <a href="/">Go Home</a>
+    """, 404
 
 
 @app.errorhandler(500)
 def internal_error(error):
 
     return """
-    <h2>Something went wrong</h2>
+    <h2>Internal Server Error</h2>
     <p>Please try again.</p>
-    <a href="/">
-    Go Home
-    </a>
+    <a href="/">Go Home</a>
     """, 500
 
 
 # ============================================================
-# START
+# STARTUP
+# ============================================================
+
+init_db()
+
+# Clean old junk tasks when app starts
+try:
+    cleanup_old_tasks()
+except Exception as e:
+    print(
+        "TASK CLEANUP ERROR:",
+        str(e)
+    )
+
+
+# ============================================================
+# LOCAL RUN
 # ============================================================
 
 if __name__ == "__main__":
 
-    port = int(
-        os.environ.get(
-            "PORT",
-            5001
-        )
-    )
-
     app.run(
         host="0.0.0.0",
-        port=port,
+        port=int(
+            os.environ.get(
+                "PORT",
+                5000
+            )
+        ),
         debug=False
     )
