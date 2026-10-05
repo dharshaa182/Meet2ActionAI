@@ -1,73 +1,113 @@
-from flask import Flask, render_template, request, redirect
+from flask import Flask, render_template, request, redirect, jsonify
 import sqlite3
 import re
 import os
+import uuid
 from datetime import datetime
 from faster_whisper import WhisperModel
 
+# ============================================================
+# APP
+# ============================================================
+
 app = Flask(__name__)
 
-# ==================================================
-# CORS
-# ==================================================
+# ============================================================
+# CONFIG
+# ============================================================
 
-@app.after_request
-def add_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    return response
-
-
-# ==================================================
-# UPLOAD SETTINGS
-# ==================================================
+app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
 
 UPLOAD_FOLDER = "uploads"
+DB_NAME = "meet2action.db"
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+
+# ============================================================
+# HEALTH CHECK
+# ============================================================
+
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "ok",
+        "app": "Meet2Action AI"
+    })
 
 
-# ==================================================
-# WHISPER
-# ==================================================
+# ============================================================
+# WHISPER MODEL
+# ============================================================
 
-model = None
+whisper_model = None
 
 
 def get_whisper_model():
-    global model
+    global whisper_model
 
-    if model is None:
-        print("Loading Whisper model...")
+    if whisper_model is None:
+        print("Loading Whisper tiny model...")
 
-        model = WhisperModel(
-            "base",
+        whisper_model = WhisperModel(
+            "tiny",
             device="cpu",
-            compute_type="int8"
+            compute_type="int8",
+            cpu_threads=1,
+            num_workers=1
         )
 
         print("Whisper model loaded.")
 
-    return model
+    return whisper_model
 
 
-# ==================================================
+def transcribe_audio(file_path):
+
+    model = get_whisper_model()
+
+    print("Starting transcription...")
+
+    segments, info = model.transcribe(
+        file_path,
+        beam_size=1,
+        best_of=1,
+        temperature=0,
+        vad_filter=True,
+        condition_on_previous_text=False
+    )
+
+    transcript_parts = []
+
+    for segment in segments:
+        text = segment.text.strip()
+
+        if text:
+            transcript_parts.append(text)
+
+    transcript = " ".join(transcript_parts).strip()
+
+    print("Transcription completed.")
+
+    return transcript
+
+
+# ============================================================
 # DATABASE
-# ==================================================
-
-DATABASE = "meet2action.db"
-
+# ============================================================
 
 def get_db():
-    conn = sqlite3.connect(DATABASE)
+
+    conn = sqlite3.connect(DB_NAME)
+
     conn.row_factory = sqlite3.Row
+
     return conn
 
 
 def init_db():
 
     conn = get_db()
+
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -109,406 +149,194 @@ def init_db():
 init_db()
 
 
-# ==================================================
+# ============================================================
 # PEOPLE
-# ==================================================
+# ============================================================
 
-KNOWN_PEOPLE = [
+PEOPLE = [
     "Dharshan",
+    "Arun",
+    "Kumar",
     "Mubeen",
     "Bala",
     "Pugazhendhi",
-    "Naveen",
-    "Arun",
-    "Kumar",
-    "Praveen",
-    "Karthik",
-    "Sanjay",
-    "Vijay",
-    "Ajay",
-    "Rahul",
-    "Priya"
+    "Naveen"
 ]
 
 
-def detect_owner(sentence):
+# ============================================================
+# OWNER DETECTION
+# ============================================================
 
-    for person in KNOWN_PEOPLE:
+def detect_owner(text):
 
-        if re.search(
-            r"\b" + re.escape(person) + r"\b",
-            sentence,
-            re.IGNORECASE
-        ):
+    text_lower = text.lower()
+
+    for person in PEOPLE:
+
+        if person.lower() in text_lower:
             return person
 
     return "Unassigned"
 
 
-# ==================================================
-# DEADLINE
-# ==================================================
+# ============================================================
+# DEADLINE DETECTION
+# ============================================================
 
-def detect_deadline(sentence):
+def detect_deadline(text):
 
-    text = sentence.lower()
+    text_lower = text.lower()
 
-    if re.search(r"\btoday\b", text):
-        return "Today"
-
-    if re.search(r"\btomorrow\b", text):
-        return "Tomorrow"
-
-    if re.search(r"\bnext week\b", text):
-        return "Next Week"
-
-    weekdays = [
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday"
+    patterns = [
+        r"\btoday\b",
+        r"\btomorrow\b",
+        r"\btonight\b",
+        r"\bthis week\b",
+        r"\bnext week\b",
+        r"\bby monday\b",
+        r"\bby tuesday\b",
+        r"\bby wednesday\b",
+        r"\bby thursday\b",
+        r"\bby friday\b",
+        r"\bby saturday\b",
+        r"\bby sunday\b"
     ]
 
-    for day in weekdays:
+    for pattern in patterns:
 
-        if re.search(r"\b" + day + r"\b", text):
-            return day.title()
+        match = re.search(pattern, text_lower)
 
-    date_match = re.search(
-        r"\b(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b",
-        sentence
-    )
+        if match:
+            return match.group(0).title()
 
-    if date_match:
-        return date_match.group(1)
-
-    months = (
-        "january|february|march|april|may|june|july|"
-        "august|september|october|november|december"
-    )
-
-    month_match = re.search(
-        r"\b(" + months + r")\s+(\d{1,2})\b",
-        text
-    )
-
-    if month_match:
-
-        return (
-            month_match.group(1).title()
-            + " "
-            + month_match.group(2)
-        )
-
-    return "Not specified"
+    return "No deadline"
 
 
-# ==================================================
-# PRIORITY
-# ==================================================
+# ============================================================
+# PRIORITY DETECTION
+# ============================================================
 
-def detect_priority(sentence):
+def detect_priority(text):
 
-    text = sentence.lower()
+    text_lower = text.lower()
 
     high_words = [
         "urgent",
-        "critical",
         "high priority",
-        "very important",
-        "immediately",
-        "as soon as possible"
-    ]
-
-    medium_words = [
         "important",
-        "medium priority"
+        "asap",
+        "immediately",
+        "critical"
     ]
 
     for word in high_words:
 
-        if word in text:
+        if word in text_lower:
             return "High"
+
+    medium_words = [
+        "soon",
+        "this week"
+    ]
 
     for word in medium_words:
 
-        if word in text:
+        if word in text_lower:
             return "Medium"
 
-    return "Low"
+    return "Normal"
 
 
-# ==================================================
+# ============================================================
 # SUMMARY
-# ==================================================
+# ============================================================
 
 def generate_summary(transcript):
 
-    sentences = re.split(
-        r"(?<=[.!?])\s+|\n+",
-        transcript.strip()
-    )
-
-    important = []
-
-    keywords = [
-        "main goal",
-        "project",
-        "prepare",
-        "research",
-        "presentation",
-        "complete",
-        "finish",
-        "deadline",
-        "update",
-        "progress",
-        "communication"
-    ]
-
-    ignored = [
-        "good morning",
-        "good afternoon",
-        "good evening",
-        "are we ready",
-        "yes, i'm ready",
-        "let's begin",
-        "i'm interested",
-        "what should we focus",
-        "first, we need to divide the tasks",
-        "that sounds good",
-        "we can work together",
-        "excellent",
-        "everyone has a clear responsibility",
-        "when should we finish",
-        "that gives us enough time",
-        "agreed",
-        "i think communication",
-        "absolutely",
-        "that's exactly right",
-        "good teamwork",
-        "we'll make sure everyone stays informed",
-        "great work",
-        "let's start working",
-        "thank you",
-        "i'm ready to get started",
-        "me too",
-        "let's make this project successful",
-        "see you"
-    ]
-
-    for sentence in sentences:
-
-        sentence = sentence.strip()
-
-        if not sentence:
-            continue
-
-        lower = sentence.lower()
-
-        if sentence.endswith("?"):
-            continue
-
-        if any(x in lower for x in ignored):
-            continue
-
-        if any(x in lower for x in keywords):
-            important.append(sentence)
-
-    unique = []
-
-    for sentence in important:
-
-        if sentence not in unique:
-            unique.append(sentence)
-
-    if not unique:
+    if not transcript:
         return "No meeting summary available."
 
-    return " ".join(unique[:4])
-
-
-# ==================================================
-# TASK EXTRACTION
-# ==================================================
-
-def extract_tasks(transcript):
-
-    tasks = []
-
     sentences = re.split(
-        r"(?<=[.!?])\s+|\n+",
+        r"(?<=[.!?])\s+",
         transcript.strip()
     )
 
-    ignored = [
-        "good morning",
-        "good afternoon",
-        "good evening",
-        "are we ready",
-        "yes, i'm ready",
-        "let's begin",
-        "i'm interested",
-        "what should we focus",
-        "that sounds good",
-        "we can work together",
-        "excellent",
-        "everyone has a clear responsibility",
-        "first, we need to divide the tasks",
-        "agreed",
-        "that gives us enough time",
-        "i think communication",
-        "absolutely",
-        "that's exactly right",
-        "good teamwork",
-        "we'll make sure everyone stays informed",
-        "great work",
-        "let's start working",
-        "thank you",
-        "i'm ready to get started",
-        "me too",
-        "let's make this project successful",
-        "see you"
+    sentences = [
+        sentence.strip()
+        for sentence in sentences
+        if sentence.strip()
     ]
 
-    patterns = [
-        r"\b[A-Za-z]+\s+will\s+",
+    if not sentences:
+        return "No meeting summary available."
 
-        r"\bI\s+can\s+"
-        r"(prepare|create|develop|design|organize|collect|"
-        r"complete|finish|test|check|update|submit|send|review|help)\b",
+    if len(sentences) <= 3:
+        return " ".join(sentences)
 
-        r"\bI'll\s+"
-        r"(prepare|create|develop|design|organize|collect|"
-        r"complete|finish|test|check|update|submit|send|review|help)\b",
+    return " ".join(sentences[:3])
 
-        r"\bshould\s+"
-        r"(update|share|complete|check|prepare|submit|review|organize)\b",
 
-        r"\bmust\b",
-        r"\bneed to\b",
-        r"\bneeds to\b",
-        r"\bhas to\b",
-        r"\bhave to\b",
+# ============================================================
+# TASK EXTRACTION
+# ============================================================
 
-        r"\bLet's\s+"
-        r"(complete|prepare|create|finish|check|update|submit)\b"
+def extract_tasks(transcript, meeting_id):
+
+    if not transcript:
+        return
+
+    sentences = re.split(
+        r"(?<=[.!?])\s+",
+        transcript.strip()
+    )
+
+    action_words = [
+        "will",
+        "should",
+        "need to",
+        "needs to",
+        "must",
+        "complete",
+        "prepare",
+        "finish",
+        "submit",
+        "create",
+        "develop",
+        "design",
+        "test",
+        "check",
+        "send",
+        "update",
+        "review",
+        "handle",
+        "work on",
+        "do"
     ]
-
-    for sentence in sentences:
-
-        sentence = sentence.strip()
-
-        if not sentence:
-            continue
-
-        if sentence.endswith("?"):
-            continue
-
-        lower = sentence.lower()
-
-        if any(x in lower for x in ignored):
-            continue
-
-        is_task = False
-
-        for pattern in patterns:
-
-            if re.search(
-                pattern,
-                sentence,
-                re.IGNORECASE
-            ):
-                is_task = True
-                break
-
-        if not is_task:
-            continue
-
-        tasks.append({
-            "task": sentence,
-            "owner": detect_owner(sentence),
-            "deadline": detect_deadline(sentence),
-            "priority": detect_priority(sentence)
-        })
-
-    return tasks
-
-
-# ==================================================
-# HOME
-# ==================================================
-
-@app.route("/")
-def index():
-    return render_template("index.html")
-
-
-# ==================================================
-# MEETING
-# ==================================================
-
-@app.route("/meeting", methods=["GET", "POST"])
-def meeting():
-
-    if request.method == "GET":
-        return render_template("meeting.html")
-
-    title = request.form.get(
-        "title",
-        "Untitled Meeting"
-    )
-
-    participants = request.form.get(
-        "participants",
-        ""
-    )
-
-    transcript = request.form.get(
-        "transcript",
-        ""
-    )
-
-    summary = request.form.get(
-        "summary",
-        ""
-    ).strip()
-
-    if not summary:
-        summary = generate_summary(transcript)
 
     conn = get_db()
     cursor = conn.cursor()
 
-    created_at = datetime.now().strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+    for sentence in sentences:
 
-    cursor.execute("""
-        INSERT INTO meetings
-        (
-            title,
-            participants,
-            transcript,
-            summary,
-            created_at
+        sentence = sentence.strip()
+
+        if not sentence:
+            continue
+
+        sentence_lower = sentence.lower()
+
+        is_action = any(
+            word in sentence_lower
+            for word in action_words
         )
-        VALUES (?, ?, ?, ?, ?)
-    """, (
-        title,
-        participants,
-        transcript,
-        summary,
-        created_at
-    ))
 
-    meeting_id = cursor.lastrowid
+        if not is_action:
+            continue
 
-    extracted_tasks = extract_tasks(transcript)
-
-    for item in extracted_tasks:
+        owner = detect_owner(sentence)
+        deadline = detect_deadline(sentence)
+        priority = detect_priority(sentence)
 
         cursor.execute("""
             INSERT INTO tasks
@@ -523,62 +351,296 @@ def meeting():
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
             meeting_id,
-            item["task"],
-            item["owner"],
-            item["deadline"],
-            item["priority"],
+            sentence,
+            owner,
+            deadline,
+            priority,
             "Pending"
         ))
 
     conn.commit()
     conn.close()
 
+
+# ============================================================
+# PARTICIPANTS
+# ============================================================
+
+def detect_participants(transcript):
+
+    participants = []
+
+    if not transcript:
+        return participants
+
+    transcript_lower = transcript.lower()
+
+    for person in PEOPLE:
+
+        if person.lower() in transcript_lower:
+            participants.append(person)
+
+    return participants
+
+
+# ============================================================
+# HOME
+# ============================================================
+
+@app.route("/")
+def home():
+
+    return render_template("index.html")
+
+
+# ============================================================
+# UPLOAD AUDIO PAGE
+# ============================================================
+
+@app.route("/upload_audio", methods=["GET"])
+def upload_audio_page():
+
+    return render_template("upload_audio.html")
+
+
+# ============================================================
+# UPLOAD AUDIO
+# ============================================================
+
+@app.route("/upload_audio", methods=["POST"])
+def upload_audio():
+
+    file = request.files.get("audio")
+
+    if not file or file.filename == "":
+        return "No audio file selected.", 400
+
+    extension = os.path.splitext(
+        file.filename
+    )[1].lower()
+
+    allowed_extensions = [
+        ".mp3",
+        ".wav",
+        ".m4a",
+        ".webm",
+        ".ogg",
+        ".mp4",
+        ".mpeg"
+    ]
+
+    if extension not in allowed_extensions:
+        return "Unsupported audio format.", 400
+
+    filename = (
+        uuid.uuid4().hex +
+        extension
+    )
+
+    file_path = os.path.join(
+        UPLOAD_FOLDER,
+        filename
+    )
+
+    try:
+
+        print("Saving uploaded audio...")
+
+        file.save(file_path)
+
+        print("Audio saved.")
+        print("Starting transcription...")
+
+        transcript = transcribe_audio(file_path)
+
+        if not transcript:
+            transcript = "No speech detected in this audio."
+
+        participants = detect_participants(
+            transcript
+        )
+
+        participant_text = ", ".join(
+            participants
+        )
+
+        if not participant_text:
+            participant_text = "Not detected"
+
+        summary = generate_summary(
+            transcript
+        )
+
+        conn = get_db()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO meetings
+            (
+                title,
+                participants,
+                transcript,
+                summary,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            "Untitled Meeting",
+            participant_text,
+            transcript,
+            summary,
+            datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        ))
+
+        meeting_id = cursor.lastrowid
+
+        conn.commit()
+        conn.close()
+
+        extract_tasks(
+            transcript,
+            meeting_id
+        )
+
+        return redirect(
+            f"/meeting/{meeting_id}"
+        )
+
+    except Exception as e:
+
+        print("UPLOAD ERROR:", str(e))
+
+        return f"""
+        <h2>Audio processing failed</h2>
+        <p>{str(e)}</p>
+        <a href="/upload_audio">Try Again</a>
+        """, 500
+
+    finally:
+
+        if os.path.exists(file_path):
+
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+
+
+# ============================================================
+# MANUAL MEETING NOTES
+# ============================================================
+
+@app.route("/meeting", methods=["GET", "POST"])
+def meeting():
+
+    if request.method == "GET":
+        return render_template("meeting.html")
+
+    notes = request.form.get(
+        "notes",
+        ""
+    ).strip()
+
+    title = request.form.get(
+        "title",
+        "Untitled Meeting"
+    ).strip()
+
+    if not notes:
+        return "Please enter meeting notes.", 400
+
+    participants = detect_participants(notes)
+
+    participant_text = ", ".join(
+        participants
+    )
+
+    if not participant_text:
+        participant_text = "Not detected"
+
+    summary = generate_summary(notes)
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO meetings
+        (
+            title,
+            participants,
+            transcript,
+            summary,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        title,
+        participant_text,
+        notes,
+        summary,
+        datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+    ))
+
+    meeting_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+
+    extract_tasks(
+        notes,
+        meeting_id
+    )
+
     return redirect(
         f"/meeting/{meeting_id}"
     )
 
 
-# ==================================================
+# ============================================================
 # MEETING DETAILS
-# ==================================================
+# ============================================================
 
 @app.route("/meeting/<int:meeting_id>")
 def meeting_details(meeting_id):
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    cursor.execute(
-        "SELECT * FROM meetings WHERE id = ?",
-        (meeting_id,)
-    )
+    meeting_data = conn.execute("""
+        SELECT *
+        FROM meetings
+        WHERE id = ?
+    """, (
+        meeting_id,
+    )).fetchone()
 
-    meeting = cursor.fetchone()
-
-    cursor.execute("""
+    tasks = conn.execute("""
         SELECT *
         FROM tasks
         WHERE meeting_id = ?
-        ORDER BY id ASC
-    """, (meeting_id,))
-
-    tasks = cursor.fetchall()
+        ORDER BY id DESC
+    """, (
+        meeting_id,
+    )).fetchall()
 
     conn.close()
 
-    if meeting is None:
-        return "Meeting not found", 404
+    if not meeting_data:
+        return "Meeting not found.", 404
 
     return render_template(
-        "meeting_details.html",
-        meeting=meeting,
+        "transcription.html",
+        meeting=meeting_data,
         tasks=tasks
     )
 
 
-# ==================================================
+# ============================================================
 # UPDATE OWNER
-# ==================================================
+# ============================================================
 
 @app.route(
     "/update_owner/<int:task_id>",
@@ -589,28 +651,11 @@ def update_owner(task_id):
     owner = request.form.get(
         "owner",
         "Unassigned"
-    ).strip()
-
-    allowed_owners = [
-        "Unassigned",
-        "Dharshan",
-        "Arun",
-        "Pugal",
-        "Mubeen",
-        "Bala",
-        "Pugazhendhi",
-        "Naveen",
-        "Karthik",
-        "Rahul"
-    ]
-
-    if owner not in allowed_owners:
-        owner = "Unassigned"
+    )
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    cursor.execute("""
+    conn.execute("""
         UPDATE tasks
         SET owner = ?
         WHERE id = ?
@@ -623,27 +668,24 @@ def update_owner(task_id):
     conn.close()
 
     return redirect(
-        request.referrer or "/"
+        request.referrer or "/dashboard"
     )
 
 
-# ==================================================
+# ============================================================
 # HISTORY
-# ==================================================
+# ============================================================
 
 @app.route("/history")
 def history():
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    cursor.execute("""
+    meetings = conn.execute("""
         SELECT *
         FROM meetings
         ORDER BY id DESC
-    """)
-
-    meetings = cursor.fetchall()
+    """).fetchall()
 
     conn.close()
 
@@ -653,93 +695,93 @@ def history():
     )
 
 
-# ==================================================
+# ============================================================
 # DASHBOARD
-# ==================================================
+# ============================================================
 
 @app.route("/dashboard")
 def dashboard():
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM meetings"
-    )
-    total_meetings = cursor.fetchone()[0]
+    total_tasks = conn.execute("""
+        SELECT COUNT(*)
+        FROM tasks
+    """).fetchone()[0]
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM tasks"
-    )
-    total_tasks = cursor.fetchone()[0]
+    pending_tasks = conn.execute("""
+        SELECT COUNT(*)
+        FROM tasks
+        WHERE status = 'Pending'
+    """).fetchone()[0]
 
-    cursor.execute("""
+    completed_tasks = conn.execute("""
         SELECT COUNT(*)
         FROM tasks
         WHERE status = 'Completed'
-    """)
-    completed_tasks = cursor.fetchone()[0]
+    """).fetchone()[0]
 
-    cursor.execute("""
-        SELECT COUNT(*)
+    overdue_tasks = 0
+
+    tasks = conn.execute("""
+        SELECT *
         FROM tasks
-        WHERE status != 'Completed'
-    """)
-    pending_tasks = cursor.fetchone()[0]
+        ORDER BY id DESC
+        LIMIT 50
+    """).fetchall()
 
     conn.close()
 
     return render_template(
         "dashboard.html",
-        total_meetings=total_meetings,
         total_tasks=total_tasks,
+        pending_tasks=pending_tasks,
         completed_tasks=completed_tasks,
-        pending_tasks=pending_tasks
+        overdue_tasks=overdue_tasks,
+        tasks=tasks
     )
 
 
-# ==================================================
+# ============================================================
 # COMPLETE TASK
-# ==================================================
+# ============================================================
 
 @app.route("/complete/<int:task_id>")
 def complete_task(task_id):
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    cursor.execute("""
+    conn.execute("""
         UPDATE tasks
         SET status = 'Completed'
         WHERE id = ?
-    """, (task_id,))
+    """, (
+        task_id,
+    ))
 
     conn.commit()
     conn.close()
 
     return redirect(
-        request.referrer or "/"
+        request.referrer or "/dashboard"
     )
 
 
-# ==================================================
+# ============================================================
 # NOTIFICATIONS
-# ==================================================
+# ============================================================
 
 @app.route("/notifications")
 def notifications():
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    cursor.execute("""
+    tasks = conn.execute("""
         SELECT *
         FROM tasks
-        WHERE status != 'Completed'
+        WHERE status = 'Pending'
         ORDER BY id DESC
-    """)
-
-    tasks = cursor.fetchall()
+    """).fetchall()
 
     conn.close()
 
@@ -749,212 +791,217 @@ def notifications():
     )
 
 
-# ==================================================
+# ============================================================
 # PROBLEMS
-# ==================================================
+# ============================================================
 
 @app.route("/problems")
 def problems():
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    cursor.execute("""
+    problems_data = conn.execute("""
         SELECT *
         FROM problems
         ORDER BY id DESC
-    """)
-
-    problems_list = cursor.fetchall()
+    """).fetchall()
 
     conn.close()
 
     return render_template(
         "problems.html",
-        problems=problems_list
+        problems=problems_data
     )
 
 
-# ==================================================
-# UPLOAD AUDIO
-# ==================================================
-
-@app.route(
-    "/upload_audio",
-    methods=["GET", "POST"]
-)
-def upload_audio():
-
-    if request.method == "GET":
-        return render_template(
-            "upload_audio.html"
-        )
-
-    audio_file = request.files.get("audio")
-
-    if not audio_file:
-        return "No audio file received"
-
-    if audio_file.filename == "":
-        return "Please select an audio file"
-
-    filename = audio_file.filename
-
-    file_path = os.path.join(
-        app.config["UPLOAD_FOLDER"],
-        filename
-    )
-
-    audio_file.save(file_path)
-
-    try:
-
-        whisper_model = get_whisper_model()
-
-        segments, info = whisper_model.transcribe(
-            file_path
-        )
-
-        transcript_parts = []
-
-        for segment in segments:
-            transcript_parts.append(
-                segment.text.strip()
-            )
-
-        transcript = " ".join(
-            transcript_parts
-        )
-
-    except Exception as e:
-
-        print(
-            "Transcription error:",
-            e
-        )
-
-        return (
-            "Transcription error: "
-            + str(e)
-        )
-
-    return render_template(
-        "transcription.html",
-        transcript=transcript
-    )
-
-
-# ==================================================
+# ============================================================
 # ANALYZE
-# ==================================================
+# ============================================================
 
-@app.route(
-    "/analyze",
-    methods=["POST"]
-)
+@app.route("/analyze", methods=["POST"])
 def analyze():
 
-    audio_file = request.files.get("audio")
+    file = request.files.get("audio")
 
-    if not audio_file:
-        return "No audio file received"
+    if not file or file.filename == "":
+        return "No audio file selected.", 400
 
-    if audio_file.filename == "":
-        return "Please select an audio file"
+    extension = os.path.splitext(
+        file.filename
+    )[1].lower()
 
-    filename = audio_file.filename
+    allowed_extensions = [
+        ".mp3",
+        ".wav",
+        ".m4a",
+        ".webm",
+        ".ogg",
+        ".mp4",
+        ".mpeg"
+    ]
+
+    if extension not in allowed_extensions:
+        return "Unsupported audio format.", 400
+
+    filename = (
+        uuid.uuid4().hex +
+        extension
+    )
 
     file_path = os.path.join(
-        app.config["UPLOAD_FOLDER"],
+        UPLOAD_FOLDER,
         filename
     )
 
-    audio_file.save(file_path)
-
     try:
 
-        whisper_model = get_whisper_model()
+        file.save(file_path)
 
-        segments, info = whisper_model.transcribe(
+        transcript = transcribe_audio(
             file_path
         )
 
-        transcript_parts = []
+        if not transcript:
+            transcript = "No speech detected."
 
-        for segment in segments:
-            transcript_parts.append(
-                segment.text.strip()
+        summary = generate_summary(
+            transcript
+        )
+
+        participants = detect_participants(
+            transcript
+        )
+
+        participant_text = ", ".join(
+            participants
+        ) or "Not detected"
+
+        conn = get_db()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO meetings
+            (
+                title,
+                participants,
+                transcript,
+                summary,
+                created_at
             )
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            "Analyzed Meeting",
+            participant_text,
+            transcript,
+            summary,
+            datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        ))
 
-        transcript = " ".join(
-            transcript_parts
+        meeting_id = cursor.lastrowid
+
+        conn.commit()
+        conn.close()
+
+        extract_tasks(
+            transcript,
+            meeting_id
+        )
+
+        return redirect(
+            f"/meeting/{meeting_id}"
         )
 
     except Exception as e:
 
-        print(
-            "Transcription error:",
-            e
-        )
+        print("ANALYZE ERROR:", str(e))
 
-        return (
-            "Transcription error: "
-            + str(e)
-        )
+        return f"""
+        <h2>Analysis failed</h2>
+        <p>{str(e)}</p>
+        <a href="/upload_audio">Go Back</a>
+        """, 500
 
-    tasks = extract_tasks(transcript)
-    summary = generate_summary(transcript)
+    finally:
 
-    return render_template(
-        "analysis.html",
-        transcript=transcript,
-        tasks=tasks,
-        summary=summary
-    )
+        if os.path.exists(file_path):
+
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
 
 
-# ==================================================
+# ============================================================
 # REPORT
-# ==================================================
+# ============================================================
 
 @app.route("/report")
 def report():
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    cursor.execute("""
+    meetings = conn.execute("""
+        SELECT *
+        FROM meetings
+        ORDER BY id DESC
+    """).fetchall()
+
+    tasks = conn.execute("""
         SELECT *
         FROM tasks
         ORDER BY id DESC
-    """)
-
-    tasks = cursor.fetchall()
+    """).fetchall()
 
     conn.close()
 
     return render_template(
         "report.html",
+        meetings=meetings,
         tasks=tasks
     )
 
 
-# ==================================================
+# ============================================================
+# ERROR HANDLERS
+# ============================================================
+
+@app.errorhandler(413)
+def file_too_large(error):
+
+    return """
+    <h2>File too large</h2>
+    <p>Please upload an audio file smaller than 25 MB.</p>
+    <a href="/upload_audio">Go Back</a>
+    """, 413
+
+
+@app.errorhandler(500)
+def internal_error(error):
+
+    return """
+    <h2>Something went wrong</h2>
+    <p>Please try again.</p>
+    <a href="/">Go Home</a>
+    """, 500
+
+
+# ============================================================
 # START
-# ==================================================
+# ============================================================
 
 if __name__ == "__main__":
 
-    print("")
-    print("==========================================")
-    print("       Meet2Action AI Started")
-    print("==========================================")
-    print("Open: http://127.0.0.1:5001")
-    print("==========================================")
-    print("")
+    port = int(
+        os.environ.get(
+            "PORT",
+            5001
+        )
+    )
 
     app.run(
         host="0.0.0.0",
-        port=5001,
-        debug=True
+        port=port,
+        debug=False
     )
