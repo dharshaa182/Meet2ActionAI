@@ -6,13 +6,11 @@ import uuid
 from datetime import datetime
 from faster_whisper import WhisperModel
 
-
 # ============================================================
 # APP
 # ============================================================
 
 app = Flask(__name__)
-
 
 # ============================================================
 # CONFIG
@@ -20,146 +18,81 @@ app = Flask(__name__)
 
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
 
-UPLOAD_FOLDER = "uploads"
-DB_NAME = "meet2action.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+DB_NAME = os.path.join(BASE_DIR, "meet2action.db")
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-
-# ============================================================
-# ALLOWED AUDIO
-# ============================================================
-
 ALLOWED_EXTENSIONS = {
-    ".mp3",
-    ".wav",
-    ".m4a",
-    ".webm",
-    ".ogg",
-    ".mp4",
-    ".mpeg"
+    "mp3",
+    "wav",
+    "m4a",
+    "mp4",
+    "webm",
+    "ogg",
+    "mpeg",
+    "mpga"
 }
 
-
 # ============================================================
-# PEOPLE
+# TEAM MEMBERS
 # ============================================================
 
 PEOPLE = [
     "Dharshan",
-    "Arun",
-    "Kumar",
     "Mubeen",
     "Bala",
     "Pugazhendhi",
-    "Naveen"
+    "Naveen",
+    "Arun",
+    "Kumar",
+    "Priya",
+    "Kamali"
 ]
 
-
 # ============================================================
-# HEALTH CHECK
-# ============================================================
-
-@app.route("/health")
-def health():
-    return jsonify({
-        "status": "ok",
-        "app": "Meet2Action AI"
-    })
-
-
-# ============================================================
-# WHISPER MODEL
+# WHISPER
 # ============================================================
 
-whisper_model = None
+print("Loading Whisper model...")
 
+model = WhisperModel(
+    "tiny",
+    device="cpu",
+    compute_type="int8",
+    cpu_threads=1,
+    num_workers=1
+)
 
-def get_whisper_model():
-
-    global whisper_model
-
-    if whisper_model is None:
-
-        print("Loading Whisper tiny model...")
-
-        whisper_model = WhisperModel(
-            "tiny",
-            device="cpu",
-            compute_type="int8",
-            cpu_threads=1,
-            num_workers=1
-        )
-
-        print("Whisper model loaded.")
-
-    return whisper_model
-
-
-def transcribe_audio(file_path):
-
-    model = get_whisper_model()
-
-    print("Starting transcription...")
-
-    segments, info = model.transcribe(
-        file_path,
-        beam_size=1,
-        best_of=1,
-        temperature=0,
-        vad_filter=True,
-        condition_on_previous_text=False
-    )
-
-    transcript_parts = []
-
-    for segment in segments:
-
-        text = segment.text.strip()
-
-        if text:
-            transcript_parts.append(text)
-
-    transcript = " ".join(
-        transcript_parts
-    ).strip()
-
-    print("Transcription completed.")
-
-    return transcript
-
+print("Whisper model loaded successfully.")
 
 # ============================================================
 # DATABASE
 # ============================================================
 
 def get_db():
-
     conn = sqlite3.connect(DB_NAME)
-
     conn.row_factory = sqlite3.Row
-
     return conn
 
 
 def init_db():
 
     conn = get_db()
+    cur = conn.cursor()
 
-    cursor = conn.cursor()
-
-    cursor.execute("""
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS meetings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            participants TEXT,
+            filename TEXT,
             transcript TEXT,
             summary TEXT,
             created_at TEXT
         )
     """)
 
-    cursor.execute("""
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             meeting_id INTEGER,
@@ -171,12 +104,12 @@ def init_db():
         )
     """)
 
-    cursor.execute("""
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS problems (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             meeting_id INTEGER,
             problem TEXT,
-            status TEXT DEFAULT 'Open'
+            created_at TEXT
         )
     """)
 
@@ -185,28 +118,151 @@ def init_db():
 
 
 # ============================================================
+# HELPERS
+# ============================================================
+
+def allowed_file(filename):
+
+    if not filename:
+        return False
+
+    if "." not in filename:
+        return False
+
+    ext = filename.rsplit(".", 1)[1].lower()
+
+    return ext in ALLOWED_EXTENSIONS
+
+
+def clean_text(text):
+
+    if not text:
+        return ""
+
+    text = text.replace("\n", " ")
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
+
+
+def normalize_task(text):
+
+    text = clean_text(text)
+
+    text = re.sub(
+        r"^(task|action item|action|todo)\s*[:\-]\s*",
+        "",
+        text,
+        flags=re.I
+    )
+
+    text = re.sub(
+        r"^(please|kindly)\s+",
+        "",
+        text,
+        flags=re.I
+    )
+
+    text = text.strip(" .,!?:;-")
+
+    if text:
+        text = text[0].upper() + text[1:]
+
+    return text
+
+
+# ============================================================
 # OWNER DETECTION
 # ============================================================
 
 def detect_owner(text):
 
-    text_lower = text.lower()
+    original = clean_text(text)
 
-    # Named person gets highest priority
+    lower = original.lower()
+
+    # --------------------------------------------------------
+    # FIRST PERSON
+    # --------------------------------------------------------
+
+    if re.search(
+        r"^\s*(i|i'll|i will|i can|i'm going to|i am going to|i am|i'm)\b",
+        lower
+    ):
+        return "Self"
+
+    # --------------------------------------------------------
+    # NAME + WILL
+    # Examples:
+    # Priya will test the application
+    # Arun will complete website
+    # Dharshan will prepare presentation
+    # --------------------------------------------------------
+
+    match = re.match(
+        r"^\s*([A-Za-z][A-Za-z0-9_-]*)\s+will\b",
+        original,
+        flags=re.I
+    )
+
+    if match:
+        return match.group(1).strip().title()
+
+    # --------------------------------------------------------
+    # NAME + CAN
+    # Example:
+    # Priya can test the application
+    # --------------------------------------------------------
+
+    match = re.match(
+        r"^\s*([A-Za-z][A-Za-z0-9_-]*)\s+can\b",
+        original,
+        flags=re.I
+    )
+
+    if match:
+        return match.group(1).strip().title()
+
+    # --------------------------------------------------------
+    # NAME + SHOULD
+    # Example:
+    # Arun should prepare report
+    # --------------------------------------------------------
+
+    match = re.match(
+        r"^\s*([A-Za-z][A-Za-z0-9_-]*)\s+should\b",
+        original,
+        flags=re.I
+    )
+
+    if match:
+        return match.group(1).strip().title()
+
+    # --------------------------------------------------------
+    # ASSIGNED TO
+    # --------------------------------------------------------
+
+    match = re.search(
+        r"(?:assigned to|assign to|responsible to|handled by|owned by)\s+([A-Za-z][A-Za-z0-9_-]*)",
+        original,
+        flags=re.I
+    )
+
+    if match:
+        return match.group(1).strip().title()
+
+    # --------------------------------------------------------
+    # FIXED TEAM MEMBERS FALLBACK
+    # --------------------------------------------------------
+
     for person in PEOPLE:
 
         if re.search(
-            r"\b" + re.escape(person.lower()) + r"\b",
-            text_lower
+            rf"\b{re.escape(person)}\b",
+            original,
+            flags=re.I
         ):
             return person
-
-    # First-person commitment
-    if re.search(
-        r"\b(i will|i'll|i can|i am going to)\b",
-        text_lower
-    ):
-        return "Self"
 
     return "Unassigned"
 
@@ -217,70 +273,175 @@ def detect_owner(text):
 
 def detect_deadline(text):
 
-    text_lower = text.lower()
+    original = clean_text(text)
+    lower = original.lower()
 
-    patterns = [
-        r"\bby today\b",
-        r"\btoday\b",
-        r"\bby tomorrow\b",
-        r"\btomorrow\b",
-        r"\btonight\b",
-        r"\bthis week\b",
-        r"\bnext week\b",
-        r"\bby monday\b",
-        r"\bby tuesday\b",
-        r"\bby wednesday\b",
-        r"\bby thursday\b",
-        r"\bby friday\b",
-        r"\bby saturday\b",
-        r"\bby sunday\b"
+    # --------------------------------------------------------
+    # TOMORROW
+    # --------------------------------------------------------
+
+    if re.search(r"\btomorrow\b", lower):
+        return "Tomorrow"
+
+    # --------------------------------------------------------
+    # TODAY
+    # --------------------------------------------------------
+
+    if re.search(r"\btoday\b", lower):
+        return "Today"
+
+    # --------------------------------------------------------
+    # TONIGHT
+    # --------------------------------------------------------
+
+    if re.search(r"\btonight\b", lower):
+        return "Tonight"
+
+    # --------------------------------------------------------
+    # THIS WEEK
+    # --------------------------------------------------------
+
+    if re.search(r"\bthis week\b", lower):
+        return "This Week"
+
+    # --------------------------------------------------------
+    # NEXT WEEK
+    # --------------------------------------------------------
+
+    if re.search(r"\bnext week\b", lower):
+        return "Next Week"
+
+    # --------------------------------------------------------
+    # WEEKDAYS
+    # --------------------------------------------------------
+
+    weekdays = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday"
     ]
 
-    for pattern in patterns:
+    for day in weekdays:
 
-        match = re.search(
-            pattern,
-            text_lower
-        )
+        if re.search(
+            rf"\b{day}\b",
+            original,
+            flags=re.I
+        ):
+            return day
 
-        if match:
-            return match.group(0).title()
+    # --------------------------------------------------------
+    # MONTH + DATE
+    #
+    # October 7
+    # October 10
+    # by October 8
+    # on October 12
+    # --------------------------------------------------------
 
-    return "No deadline"
+    months = (
+        "January|February|March|April|May|June|July|"
+        "August|September|October|November|December"
+    )
+
+    match = re.search(
+        rf"\b({months})\s+(\d{{1,2}})(?:st|nd|rd|th)?\b",
+        original,
+        flags=re.I
+    )
+
+    if match:
+
+        month = match.group(1).capitalize()
+        day = match.group(2)
+
+        return f"{month} {day}"
+
+    # --------------------------------------------------------
+    # DATE + MONTH
+    #
+    # 7 October
+    # 10 October
+    # --------------------------------------------------------
+
+    match = re.search(
+        rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({months})\b",
+        original,
+        flags=re.I
+    )
+
+    if match:
+
+        day = match.group(1)
+        month = match.group(2).capitalize()
+
+        return f"{month} {day}"
+
+    # --------------------------------------------------------
+    # NUMERIC DATE
+    #
+    # 10/10
+    # 10-10
+    # --------------------------------------------------------
+
+    match = re.search(
+        r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b",
+        original
+    )
+
+    if match:
+
+        day = match.group(1)
+        month = match.group(2)
+
+        if match.group(3):
+            year = match.group(3)
+            return f"{day}/{month}/{year}"
+
+        return f"{day}/{month}"
+
+    return "Not specified"
 
 
 # ============================================================
-# PRIORITY DETECTION
+# PRIORITY
 # ============================================================
 
 def detect_priority(text):
 
-    text_lower = text.lower()
+    lower = clean_text(text).lower()
 
     high_words = [
         "urgent",
-        "high priority",
-        "important",
-        "asap",
-        "immediately",
         "critical",
-        "emergency"
+        "important",
+        "immediately",
+        "asap",
+        "high priority",
+        "fix bug",
+        "fix issue",
+        "resolve issue",
+        "production issue"
+    ]
+
+    medium_words = [
+        "soon",
+        "important task",
+        "medium priority"
     ]
 
     for word in high_words:
 
-        if word in text_lower:
+        if word in lower:
             return "High"
-
-    medium_words = [
-        "soon",
-        "this week",
-        "medium priority"
-    ]
 
     for word in medium_words:
 
-        if word in text_lower:
+        if word in lower:
             return "Medium"
 
     return "Normal"
@@ -292,49 +453,26 @@ def detect_priority(text):
 
 def generate_summary(transcript):
 
+    transcript = clean_text(transcript)
+
     if not transcript:
-        return "No meeting summary available."
+        return "No transcript available."
 
     sentences = re.split(
         r"(?<=[.!?])\s+",
-        transcript.strip()
+        transcript
     )
 
     sentences = [
-        sentence.strip()
-        for sentence in sentences
-        if sentence.strip()
+        s.strip()
+        for s in sentences
+        if s.strip()
     ]
 
-    if not sentences:
-        return "No meeting summary available."
+    if len(sentences) <= 4:
+        return " ".join(sentences)
 
-    return " ".join(
-        sentences[:3]
-    )
-
-
-# ============================================================
-# TASK TEXT NORMALIZATION
-# ============================================================
-
-def normalize_task(text):
-
-    text = text.lower()
-
-    text = re.sub(
-        r"[^a-z0-9\s]",
-        "",
-        text
-    )
-
-    text = re.sub(
-        r"\s+",
-        " ",
-        text
-    ).strip()
-
-    return text
+    return " ".join(sentences[:4])
 
 
 # ============================================================
@@ -344,323 +482,252 @@ def normalize_task(text):
 def extract_tasks(transcript, meeting_id):
 
     if not transcript:
-        return
+        return []
+
+    text = clean_text(transcript)
 
     # Split transcript into sentences
     sentences = re.split(
-        r"(?<=[.!?])\s+",
-        transcript.strip()
+        r"(?<=[.!?])\s+|(?<=\n)",
+        text
     )
 
-    conn = get_db()
-    cursor = conn.cursor()
+    tasks_created = []
+    seen = set()
 
-    inserted_tasks = set()
+    conn = get_db()
+
+    # --------------------------------------------------------
+    # ACTION PATTERNS
+    # --------------------------------------------------------
+
+    action_patterns = [
+        r"\bwill\b",
+        r"\bcan\b",
+        r"\bi'll\b",
+        r"\bi will\b",
+        r"\bi can\b",
+        r"\blet's\b",
+        r"\bneed to\b",
+        r"\bneeds to\b",
+        r"\bassigned to\b",
+        r"\bresponsible for\b",
+        r"\bcomplete\b",
+        r"\bprepare\b",
+        r"\bcreate\b",
+        r"\bdesign\b",
+        r"\bdevelop\b",
+        r"\bbuild\b",
+        r"\btest\b",
+        r"\bfix\b",
+        r"\bsubmit\b",
+        r"\bupdate\b",
+        r"\bcollect\b",
+        r"\bresearch\b",
+        r"\borganize\b",
+        r"\breview\b",
+        r"\bpresent\b",
+        r"\bdocument\b",
+        r"\banalyze\b"
+    ]
+
+    # --------------------------------------------------------
+    # GENERIC / JUNK PHRASES
+    # --------------------------------------------------------
+
+    junk_patterns = [
+        r"where should i go",
+        r"what should we do",
+        r"how should we",
+        r"i think",
+        r"i guess",
+        r"maybe we",
+        r"we should discuss",
+        r"we should talk",
+        r"we need to discuss",
+        r"we need to talk",
+        r"communication will be",
+        r"we should share updates",
+        r"update the team about our progress",
+        r"that gives us enough time",
+        r"when should we finish",
+        r"when do we finish",
+        r"what do you think"
+    ]
 
     for sentence in sentences:
 
-        sentence = re.sub(
-            r"\s+",
-            " ",
-            sentence.strip()
-        )
+        sentence = clean_text(sentence)
 
         if not sentence:
             continue
 
-        # Minimum sentence length
-        if len(sentence.split()) < 4:
-            continue
+        lower = sentence.lower()
 
-        text = sentence.rstrip(".!?").strip()
-        lower = text.lower()
-
-        # ====================================================
-        # REJECT QUESTIONS
-        # ====================================================
+        # ----------------------------------------------------
+        # SKIP QUESTIONS
+        # ----------------------------------------------------
 
         if "?" in sentence:
             continue
 
         if re.match(
-            r"^(where|what|when|who|why|how)\b",
+            r"^(what|why|when|where|who|how|which|can we|should we)\b",
             lower
         ):
             continue
 
-        # ====================================================
-        # REJECT NORMAL DISCUSSION
-        # ====================================================
+        # ----------------------------------------------------
+        # SKIP JUNK
+        # ----------------------------------------------------
 
-        blocked_phrases = [
+        skip = False
 
-            # General discussion
-            "great work",
-            "good teamwork",
-            "clear communication",
-            "communication will be",
-            "will be important",
+        for pattern in junk_patterns:
 
-            # Opinion
-            "i think",
-            "i believe",
-            "i feel",
-            "i guess",
-            "i suppose",
+            if re.search(pattern, lower):
+                skip = True
+                break
 
-            # Generic team statements
-            "we can work together",
-            "work together and finish",
-            "let's start working",
-            "let us start working",
-            "let's get started",
-            "let us get started",
-
-            # Planning discussion
-            "first, we need to divide",
-            "first we need to divide",
-            "we should divide the tasks",
-            "we should share updates",
-            "we should also update",
-
-            # Informational statements
-            "stay informed",
-            "stays informed",
-            "enough time",
-            "gives us enough time",
-            "make this project successful",
-            "make this project a success",
-
-            # Questions accidentally transcribed without ?
-            "when should we finish",
-            "what should we focus",
-            "where should we go",
-            "what should we do",
-            "how should we",
-
-            # Generic completion statements
-            "complete everything",
-            "finish everything",
-            "finish them on time",
-            "finish them by",
-            "complete them on time"
-        ]
-
-        if any(
-            phrase in lower
-            for phrase in blocked_phrases
-        ):
+        if skip:
             continue
 
-        # ====================================================
-        # REJECT SENTENCES STARTING WITH GENERAL WORDS
-        # ====================================================
+        # ----------------------------------------------------
+        # MUST LOOK LIKE AN ACTION
+        # ----------------------------------------------------
+
+        is_action = False
+
+        for pattern in action_patterns:
+
+            if re.search(pattern, lower):
+                is_action = True
+                break
+
+        if not is_action:
+            continue
+
+        # ----------------------------------------------------
+        # REMOVE VAGUE SENTENCES
+        # ----------------------------------------------------
 
         if re.match(
-            r"^(yes|no|okay|ok|great|good|sure|right|actually|maybe|probably)\b",
+            r"^(we|it|this|that)\s+(will|would|could|should)\s+be\b",
             lower
         ):
             continue
 
-        # ====================================================
-        # EXPLICIT ACTION PATTERNS
-        # ====================================================
+        # ----------------------------------------------------
+        # NORMALIZE TASK
+        # ----------------------------------------------------
 
-        valid_patterns = [
-
-            # Personal commitment
-            r"\bi will\b",
-            r"\bi'll\b",
-            r"\bi can\b",
-            r"\bi am going to\b",
-
-            # Team commitment
-            r"\bwe will\b",
-            r"\bwe'll\b",
-            r"\bwe have to\b",
-            r"\bwe need to\b",
-
-            # Assignment
-            r"\bassigned to\b",
-            r"\bresponsible for\b",
-            r"\bhas to\b",
-            r"\bhave to\b",
-            r"\bneeds to\b",
-            r"\bneed to\b",
-            r"\bmust\b",
-
-            # Direct action
-            r"\bprepare\b",
-            r"\bcreate\b",
-            r"\bdevelop\b",
-            r"\bdesign\b",
-            r"\bsubmit\b",
-            r"\btest\b",
-            r"\breview\b",
-            r"\bsend\b",
-            r"\borganize\b",
-            r"\bcollect\b",
-            r"\bimplement\b",
-            r"\bbuild\b",
-            r"\bfix\b",
-            r"\bfinalize\b",
-            r"\bpresent\b",
-            r"\binstall\b",
-            r"\bdeploy\b",
-            r"\bdocument\b"
-        ]
-
-        if not any(
-            re.search(pattern, lower)
-            for pattern in valid_patterns
-        ):
-            continue
-
-        # ====================================================
-        # REJECT VAGUE "SHOULD/WILL BE"
-        # ====================================================
-
-        if re.search(
-            r"\b(should|would|could|will)\s+be\b",
-            lower
-        ):
-            continue
-
-        if re.search(
-            r"\b(is|are)\s+important\b",
-            lower
-        ):
-            continue
-
-        # ====================================================
-        # CLEAN COMMITMENT PREFIX
-        # ====================================================
-
-        task_text = text
-
-        prefixes = [
-            r"^i will\s+",
-            r"^i'll\s+",
-            r"^i can\s+",
-            r"^i am going to\s+",
-            r"^we will\s+",
-            r"^we'll\s+"
-        ]
-
-        for prefix in prefixes:
-
-            task_text = re.sub(
-                prefix,
-                "",
-                task_text,
-                flags=re.IGNORECASE
-            ).strip()
-
-        # ====================================================
-        # DO NOT TURN GENERIC "LET'S" INTO TASK
-        # ====================================================
-
-        if lower.startswith("let's "):
-
-            action = lower[7:].strip()
-
-            if action in [
-                "start working",
-                "get started",
-                "work together",
-                "complete everything by friday afternoon"
-            ]:
-                continue
-
-            # Only allow clearly specific actions
-            if not re.match(
-                r"^(prepare|create|develop|design|submit|test|review|send|organize|collect|implement|build|fix|finalize|present|install|deploy|document)\b",
-                action
-            ):
-                continue
-
-            task_text = re.sub(
-                r"^let's\s+",
-                "",
-                task_text,
-                flags=re.IGNORECASE
-            ).strip()
-
-        # ====================================================
-        # CLEAN TASK
-        # ====================================================
-
-        task_text = task_text.rstrip(
-            ".!?"
-        ).strip()
+        task_text = normalize_task(sentence)
 
         if not task_text:
             continue
 
+        # ----------------------------------------------------
+        # REMOVE PURE DISCUSSION SENTENCES
+        # ----------------------------------------------------
+
         if len(task_text.split()) < 3:
             continue
 
-        # ====================================================
-        # REJECT GENERIC TASK TEXT
-        # ====================================================
+        # ----------------------------------------------------
+        # FIRST PERSON PREFIX
+        # ----------------------------------------------------
 
-        generic_tasks = [
-            "complete everything",
-            "finish everything",
-            "start working",
-            "get started",
-            "work together",
-            "finish them on time",
-            "finish them",
-            "complete them"
-        ]
-
-        if normalize_task(task_text) in generic_tasks:
-            continue
-
-        # ====================================================
-        # DUPLICATE PROTECTION
-        # ====================================================
-
-        normalized = normalize_task(
-            task_text
+        task_text = re.sub(
+            r"^(I|I'll|I will|I can|I'm going to|I am going to)\s+",
+            "",
+            task_text,
+            flags=re.I
         )
 
-        if not normalized:
+        # ----------------------------------------------------
+        # TEAM PREFIX
+        # ----------------------------------------------------
+
+        task_text = re.sub(
+            r"^(we will|we can|we need to|we have to|let's)\s+",
+            "",
+            task_text,
+            flags=re.I
+        )
+
+        task_text = task_text.strip()
+
+        if not task_text:
             continue
 
-        if normalized in inserted_tasks:
+        task_text = task_text[0].upper() + task_text[1:]
+
+        # ----------------------------------------------------
+        # REMOVE TRAILING punctuation
+        # ----------------------------------------------------
+
+        task_text = task_text.rstrip(" .,!?:;-")
+
+        # ----------------------------------------------------
+        # FINAL JUNK CHECK
+        # ----------------------------------------------------
+
+        if len(task_text.split()) < 3:
             continue
 
-        cursor.execute("""
+        # ----------------------------------------------------
+        # OWNER
+        # ----------------------------------------------------
+
+        owner = detect_owner(sentence)
+
+        # ----------------------------------------------------
+        # DEADLINE
+        # ----------------------------------------------------
+
+        deadline = detect_deadline(sentence)
+
+        # ----------------------------------------------------
+        # PRIORITY
+        # ----------------------------------------------------
+
+        priority = detect_priority(sentence)
+
+        # ----------------------------------------------------
+        # DEDUPLICATE WITHIN CURRENT MEETING
+        # ----------------------------------------------------
+
+        key = task_text.lower().strip()
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+
+        # ----------------------------------------------------
+        # DEDUPLICATE SAME TASK FOR SAME MEETING
+        # ----------------------------------------------------
+
+        existing = conn.execute(
+            """
             SELECT id
             FROM tasks
             WHERE meeting_id = ?
             AND LOWER(TRIM(task)) = LOWER(TRIM(?))
             LIMIT 1
-        """, (
-            meeting_id,
-            task_text
-        ))
+            """,
+            (meeting_id, task_text)
+        ).fetchone()
 
-        if cursor.fetchone():
+        if existing:
             continue
 
-        # ====================================================
-        # METADATA
-        # ====================================================
-
-        owner = detect_owner(text)
-
-        deadline = detect_deadline(text)
-
-        priority = detect_priority(text)
-
-        # ====================================================
+        # ----------------------------------------------------
         # INSERT
-        # ====================================================
+        # ----------------------------------------------------
 
-        cursor.execute("""
+        cursor = conn.execute(
+            """
             INSERT INTO tasks
             (
                 meeting_id,
@@ -671,133 +738,72 @@ def extract_tasks(transcript, meeting_id):
                 status
             )
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            meeting_id,
-            task_text,
-            owner,
-            deadline,
-            priority,
-            "Pending"
-        ))
-
-        inserted_tasks.add(
-            normalized
+            """,
+            (
+                meeting_id,
+                task_text,
+                owner,
+                deadline,
+                priority,
+                "Pending"
+            )
         )
+
+        task_id = cursor.lastrowid
+
+        tasks_created.append({
+            "id": task_id,
+            "meeting_id": meeting_id,
+            "task": task_text,
+            "owner": owner,
+            "deadline": deadline,
+            "priority": priority,
+            "status": "Pending"
+        })
 
     conn.commit()
     conn.close()
 
-    print(
-        f"Task extraction completed for meeting {meeting_id}."
-    )
+    return tasks_created
 
 
 # ============================================================
-# CLEAN OLD JUNK + DUPLICATES
+# CLEAN OLD JUNK DATA
 # ============================================================
 
 def cleanup_old_tasks():
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    # ========================================================
-    # REMOVE QUESTIONS
-    # ========================================================
-
-    cursor.execute("""
+    # Remove questions
+    conn.execute("""
         DELETE FROM tasks
-        WHERE
-            LOWER(TRIM(task)) LIKE 'where %'
-            OR LOWER(TRIM(task)) LIKE 'what %'
-            OR LOWER(TRIM(task)) LIKE 'when %'
-            OR LOWER(TRIM(task)) LIKE 'who %'
-            OR LOWER(TRIM(task)) LIKE 'why %'
-            OR LOWER(TRIM(task)) LIKE 'how %'
+        WHERE task LIKE '%?%'
     """)
 
-    # ========================================================
-    # REMOVE KNOWN JUNK
-    # ========================================================
-
-    junk_phrases = [
-
-        "great work",
-        "good teamwork",
-        "clear communication",
-        "communication will be important",
-        "will be important",
-
-        "i think",
-        "i believe",
-        "i feel",
-
-        "let's start working",
-        "let us start working",
-
-        "we can work together",
-        "work together and finish",
-
-        "first, we need to divide",
-        "first we need to divide",
-
-        "we should share updates",
-        "we should also update",
-
-        "stay informed",
-        "stays informed",
-
-        "enough time",
-        "gives us enough time",
-
-        "make this project successful",
-        "make this project a success",
-
-        "complete everything",
-        "finish everything",
-        "finish them on time",
-
-        "when should we finish",
-        "what should we focus",
-        "where should we go",
-        "what should we do",
-        "how should we"
+    # Remove obvious junk
+    junk_words = [
+        "Where should I go",
+        "I think communication",
+        "We should share updates regularly",
+        "update the team about our progress",
+        "That gives us enough time",
+        "When should we finish",
+        "What should we do"
     ]
 
-    for phrase in junk_phrases:
+    for word in junk_words:
 
-        cursor.execute("""
+        conn.execute(
+            """
             DELETE FROM tasks
-            WHERE LOWER(TRIM(task)) LIKE ?
-        """, (
-            "%" + phrase.lower() + "%",
-        ))
-
-    # ========================================================
-    # REMOVE GENERIC SENTENCES
-    # ========================================================
-
-    cursor.execute("""
-        DELETE FROM tasks
-        WHERE LOWER(TRIM(task)) IN (
-            'start working',
-            'get started',
-            'work together',
-            'finish them',
-            'complete them',
-            'finish them on time',
-            'complete everything',
-            'finish everything'
+            WHERE LOWER(task) LIKE ?
+            """,
+            (f"%{word.lower()}%",)
         )
-    """)
 
-    # ========================================================
-    # GLOBAL EXACT DUPLICATE CLEANUP
-    # ========================================================
-    # Keeps newest copy of exactly same task.
-    # ========================================================
-
-    cursor.execute("""
+    # Remove exact duplicate tasks
+    conn.execute("""
         DELETE FROM tasks
         WHERE id NOT IN (
             SELECT MAX(id)
@@ -809,8 +815,6 @@ def cleanup_old_tasks():
     conn.commit()
     conn.close()
 
-    print("Old junk and duplicate tasks cleaned.")
-
 
 # ============================================================
 # PARTICIPANTS
@@ -818,22 +822,21 @@ def cleanup_old_tasks():
 
 def detect_participants(transcript):
 
-    participants = []
+    found = []
 
     if not transcript:
-        return participants
-
-    transcript_lower = transcript.lower()
+        return found
 
     for person in PEOPLE:
 
         if re.search(
-            r"\b" + re.escape(person.lower()) + r"\b",
-            transcript_lower
+            rf"\b{re.escape(person)}\b",
+            transcript,
+            flags=re.I
         ):
-            participants.append(person)
+            found.append(person)
 
-    return participants
+    return found
 
 
 # ============================================================
@@ -843,295 +846,177 @@ def detect_participants(transcript):
 @app.route("/")
 def home():
 
-    return render_template(
-        "index.html"
-    )
-
-
-# ============================================================
-# UPLOAD AUDIO PAGE
-# ============================================================
-
-@app.route(
-    "/upload_audio",
-    methods=["GET"]
-)
-def upload_audio_page():
-
-    return render_template(
-        "upload_audio.html"
-    )
+    return render_template("index.html")
 
 
 # ============================================================
 # UPLOAD AUDIO
 # ============================================================
 
-@app.route(
-    "/upload_audio",
-    methods=["POST"]
-)
+@app.route("/upload_audio", methods=["POST"])
 def upload_audio():
 
-    file = request.files.get(
-        "audio"
+    if "audio" not in request.files:
+
+        return jsonify({
+            "success": False,
+            "error": "No audio file uploaded."
+        }), 400
+
+    file = request.files["audio"]
+
+    if not file.filename:
+
+        return jsonify({
+            "success": False,
+            "error": "Please select an audio file."
+        }), 400
+
+    if not allowed_file(file.filename):
+
+        return jsonify({
+            "success": False,
+            "error": "Unsupported audio format."
+        }), 400
+
+    unique_name = (
+        str(uuid.uuid4())
+        + "_"
+        + file.filename
     )
 
-    if not file or file.filename == "":
-        return (
-            "No audio file selected.",
-            400
-        )
-
-    extension = os.path.splitext(
-        file.filename
-    )[1].lower()
-
-    if extension not in ALLOWED_EXTENSIONS:
-
-        return (
-            "Unsupported audio format.",
-            400
-        )
-
-    filename = (
-        uuid.uuid4().hex +
-        extension
-    )
-
-    file_path = os.path.join(
+    filepath = os.path.join(
         UPLOAD_FOLDER,
-        filename
+        unique_name
     )
+
+    file.save(filepath)
+
+    print("Audio saved:", filepath)
+    print("Starting transcription...")
 
     try:
 
-        print("Saving uploaded audio...")
-
-        file.save(file_path)
-
-        print("Audio saved.")
-
-        transcript = transcribe_audio(
-            file_path
+        segments, info = model.transcribe(
+            filepath,
+            beam_size=1,
+            best_of=1,
+            temperature=0,
+            vad_filter=True,
+            condition_on_previous_text=False
         )
 
-        if not transcript:
+        transcript_parts = []
 
-            transcript = (
-                "No speech detected in this audio."
-            )
+        for segment in segments:
 
-        participants = detect_participants(
-            transcript
-        )
+            segment_text = clean_text(segment.text)
 
-        participant_text = ", ".join(
-            participants
-        )
+            if segment_text:
+                transcript_parts.append(segment_text)
 
-        if not participant_text:
+        transcript = " ".join(transcript_parts)
 
-            participant_text = "Not detected"
+        transcript = clean_text(transcript)
 
-        summary = generate_summary(
-            transcript
-        )
-
-        conn = get_db()
-
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            INSERT INTO meetings
-            (
-                title,
-                participants,
-                transcript,
-                summary,
-                created_at
-            )
-            VALUES (?, ?, ?, ?, ?)
-        """, (
-            "Audio Meeting",
-            participant_text,
-            transcript,
-            summary,
-            datetime.now().strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-        ))
-
-        meeting_id = cursor.lastrowid
-
-        conn.commit()
-        conn.close()
-
-        extract_tasks(
-            transcript,
-            meeting_id
-        )
-
-        return redirect(
-            f"/meeting/{meeting_id}"
-        )
+        print("Transcription completed.")
 
     except Exception as e:
 
-        print(
-            "UPLOAD ERROR:",
-            str(e)
-        )
+        print("Transcription error:", e)
 
-        return f"""
-        <h2>Audio processing failed</h2>
-        <p>{str(e)}</p>
-        <a href="/upload_audio">Try Again</a>
-        """, 500
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
-    finally:
-
-        if os.path.exists(file_path):
-
-            try:
-                os.remove(file_path)
-
-            except Exception:
-                pass
-
-
-# ============================================================
-# MANUAL MEETING
-# ============================================================
-
-@app.route(
-    "/meeting",
-    methods=["GET", "POST"]
-)
-def meeting():
-
-    if request.method == "GET":
-
-        return render_template(
-            "meeting.html"
-        )
-
-    notes = request.form.get(
-        "notes",
-        ""
-    ).strip()
-
-    title = request.form.get(
-        "title",
-        "Meeting"
-    ).strip()
-
-    participants = request.form.get(
-        "participants",
-        ""
-    ).strip()
-
-    if not notes:
-
-        return (
-            "Please enter meeting notes.",
-            400
-        )
-
-    if not title:
-
-        title = "Meeting"
-
-    if not participants:
-
-        detected = detect_participants(
-            notes
-        )
-
-        participants = (
-            ", ".join(detected)
-            or "Not detected"
-        )
-
-    summary = generate_summary(
-        notes
-    )
+    # --------------------------------------------------------
+    # CREATE MEETING
+    # --------------------------------------------------------
 
     conn = get_db()
 
-    cursor = conn.cursor()
-
-    cursor.execute("""
+    cursor = conn.execute(
+        """
         INSERT INTO meetings
         (
-            title,
-            participants,
+            filename,
             transcript,
             summary,
             created_at
         )
-        VALUES (?, ?, ?, ?, ?)
-    """, (
-        title,
-        participants,
-        notes,
-        summary,
-        datetime.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            file.filename,
+            transcript,
+            generate_summary(transcript),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         )
-    ))
+    )
 
     meeting_id = cursor.lastrowid
 
     conn.commit()
     conn.close()
 
+    # --------------------------------------------------------
+    # EXTRACT TASKS
+    # --------------------------------------------------------
+
     extract_tasks(
-        notes,
+        transcript,
         meeting_id
     )
 
+    # --------------------------------------------------------
+    # REMOVE FILE AFTER TRANSCRIPTION
+    # --------------------------------------------------------
+
+    try:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+    except Exception:
+        pass
+
     return redirect(
-        "/dashboard"
+        f"/meeting/{meeting_id}"
     )
 
 
 # ============================================================
-# MEETING DETAILS
+# MEETING PAGE
 # ============================================================
 
-@app.route(
-    "/meeting/<int:meeting_id>"
-)
-def meeting_details(meeting_id):
+@app.route("/meeting/<int:meeting_id>")
+def meeting(meeting_id):
 
     conn = get_db()
 
-    meeting_data = conn.execute("""
+    meeting_data = conn.execute(
+        """
         SELECT *
         FROM meetings
         WHERE id = ?
-    """, (
-        meeting_id,
-    )).fetchone()
+        """,
+        (meeting_id,)
+    ).fetchone()
 
-    tasks = conn.execute("""
+    tasks = conn.execute(
+        """
         SELECT *
         FROM tasks
         WHERE meeting_id = ?
         ORDER BY id DESC
-    """, (
-        meeting_id,
-    )).fetchall()
+        """,
+        (meeting_id,)
+    ).fetchall()
 
     conn.close()
 
     if not meeting_data:
 
-        return (
-            "Meeting not found.",
-            404
-        )
+        return "Meeting not found", 404
 
     return render_template(
         "transcription.html",
@@ -1141,41 +1026,134 @@ def meeting_details(meeting_id):
 
 
 # ============================================================
+# OLD /MEETING POST SUPPORT
+# ============================================================
+
+@app.route("/meeting", methods=["POST"])
+def meeting_post():
+
+    return redirect("/dashboard")
+
+
+# ============================================================
 # UPDATE OWNER
 # ============================================================
 
-@app.route(
-    "/update_owner/<int:task_id>",
-    methods=["POST"]
-)
+@app.route("/update_owner/<int:task_id>", methods=["POST"])
 def update_owner(task_id):
 
-    owner = request.form.get(
-        "owner",
-        "Unassigned"
-    ).strip()
+    owner = request.form.get("owner", "").strip()
 
     if not owner:
         owner = "Unassigned"
 
     conn = get_db()
 
-    conn.execute("""
+    conn.execute(
+        """
         UPDATE tasks
         SET owner = ?
         WHERE id = ?
-    """, (
-        owner,
-        task_id
-    ))
+        """,
+        (
+            owner,
+            task_id
+        )
+    )
 
     conn.commit()
     conn.close()
 
-    return redirect(
-        request.referrer
-        or "/dashboard"
+    return redirect("/dashboard")
+
+
+# ============================================================
+# DASHBOARD
+# ============================================================
+
+@app.route("/dashboard")
+def dashboard():
+
+    cleanup_old_tasks()
+
+    conn = get_db()
+
+    tasks = conn.execute(
+        """
+        SELECT
+            id,
+            meeting_id,
+            task,
+            owner,
+            deadline,
+            priority,
+            status
+        FROM tasks
+        ORDER BY id DESC
+        LIMIT 100
+        """
+    ).fetchall()
+
+    meetings = conn.execute(
+        """
+        SELECT *
+        FROM meetings
+        ORDER BY id DESC
+        LIMIT 20
+        """
+    ).fetchall()
+
+    conn.close()
+
+    total_tasks = len(tasks)
+
+    completed_tasks = sum(
+        1
+        for task in tasks
+        if str(task["status"]).lower() == "completed"
     )
+
+    pending_tasks = total_tasks - completed_tasks
+
+    high_priority = sum(
+        1
+        for task in tasks
+        if str(task["priority"]).lower() == "high"
+    )
+
+    return render_template(
+        "dashboard.html",
+        tasks=tasks,
+        meetings=meetings,
+        total_tasks=total_tasks,
+        completed_tasks=completed_tasks,
+        pending_tasks=pending_tasks,
+        high_priority=high_priority
+    )
+
+
+# ============================================================
+# MARK COMPLETED
+# ============================================================
+
+@app.route("/complete/<int:task_id>")
+def complete_task(task_id):
+
+    conn = get_db()
+
+    conn.execute(
+        """
+        UPDATE tasks
+        SET status = 'Completed'
+        WHERE id = ?
+        """,
+        (task_id,)
+    )
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/dashboard")
 
 
 # ============================================================
@@ -1187,105 +1165,19 @@ def history():
 
     conn = get_db()
 
-    meetings = conn.execute("""
+    meetings = conn.execute(
+        """
         SELECT *
         FROM meetings
         ORDER BY id DESC
-    """).fetchall()
+        """
+    ).fetchall()
 
     conn.close()
 
     return render_template(
         "history.html",
         meetings=meetings
-    )
-
-
-# ============================================================
-# DASHBOARD
-# ============================================================
-
-@app.route("/dashboard")
-def dashboard():
-
-    conn = get_db()
-
-    total_tasks = conn.execute("""
-        SELECT COUNT(*)
-        FROM tasks
-    """).fetchone()[0]
-
-    pending_tasks = conn.execute("""
-        SELECT COUNT(*)
-        FROM tasks
-        WHERE status = 'Pending'
-    """).fetchone()[0]
-
-    completed_tasks = conn.execute("""
-        SELECT COUNT(*)
-        FROM tasks
-        WHERE status = 'Completed'
-    """).fetchone()[0]
-
-    # Future improvement:
-    # Calculate real date-based overdue tasks.
-    overdue_tasks = conn.execute("""
-        SELECT COUNT(*)
-        FROM tasks
-        WHERE status = 'Overdue'
-    """).fetchone()[0]
-
-    tasks = conn.execute("""
-        SELECT
-            id,
-            meeting_id,
-            task,
-            owner,
-            deadline,
-            priority,
-            status
-        FROM tasks
-        ORDER BY id DESC
-        LIMIT 50
-    """).fetchall()
-
-    conn.close()
-
-    return render_template(
-        "dashboard.html",
-        total_tasks=total_tasks,
-        pending_tasks=pending_tasks,
-        completed_tasks=completed_tasks,
-        overdue_tasks=overdue_tasks,
-        tasks=tasks
-    )
-
-
-# ============================================================
-# COMPLETE TASK
-# ============================================================
-
-@app.route(
-    "/complete/<int:task_id>"
-)
-def complete_task(task_id):
-
-    conn = get_db()
-
-    conn.execute("""
-        UPDATE tasks
-        SET status = 'Completed'
-        WHERE id = ?
-    """, (
-        task_id,
-    ))
-
-    conn.commit()
-    conn.close()
-
-    return redirect(
-        request.referrer
-        or "/dashboard"
     )
 
 
@@ -1298,12 +1190,14 @@ def notifications():
 
     conn = get_db()
 
-    tasks = conn.execute("""
+    tasks = conn.execute(
+        """
         SELECT *
         FROM tasks
-        WHERE status = 'Pending'
+        WHERE status != 'Completed'
         ORDER BY id DESC
-    """).fetchall()
+        """
+    ).fetchall()
 
     conn.close()
 
@@ -1322,11 +1216,13 @@ def problems():
 
     conn = get_db()
 
-    problems_data = conn.execute("""
+    problems_data = conn.execute(
+        """
         SELECT *
         FROM problems
         ORDER BY id DESC
-    """).fetchall()
+        """
+    ).fetchall()
 
     conn.close()
 
@@ -1337,174 +1233,61 @@ def problems():
 
 
 # ============================================================
-# ANALYZE AUDIO
+# ANALYZE
 # ============================================================
 
-@app.route(
-    "/analyze",
-    methods=["POST"]
-)
+@app.route("/analyze", methods=["POST"])
 def analyze():
 
-    file = request.files.get(
-        "audio"
-    )
+    # --------------------------------------------------------
+    # If meeting ID is provided, use existing meeting
+    # --------------------------------------------------------
 
-    if not file or file.filename == "":
-        return (
-            "No audio file selected.",
-            400
-        )
+    meeting_id = request.form.get("meeting_id")
 
-    extension = os.path.splitext(
-        file.filename
-    )[1].lower()
+    if meeting_id:
 
-    if extension not in ALLOWED_EXTENSIONS:
+        try:
+            meeting_id = int(meeting_id)
+        except ValueError:
+            meeting_id = None
 
-        return (
-            "Unsupported audio format.",
-            400
-        )
-
-    filename = (
-        uuid.uuid4().hex +
-        extension
-    )
-
-    file_path = os.path.join(
-        UPLOAD_FOLDER,
-        filename
-    )
-
-    try:
-
-        print(
-            "Saving audio for analysis..."
-        )
-
-        file.save(file_path)
-
-        print(
-            "Starting analysis..."
-        )
-
-        transcript = transcribe_audio(
-            file_path
-        )
-
-        if not transcript:
-
-            transcript = (
-                "No speech detected."
-            )
-
-        summary = generate_summary(
-            transcript
-        )
-
-        participants = detect_participants(
-            transcript
-        )
-
-        participant_text = (
-            ", ".join(participants)
-            or "Not detected"
-        )
+    if meeting_id:
 
         conn = get_db()
 
-        cursor = conn.cursor()
+        meeting_data = conn.execute(
+            """
+            SELECT *
+            FROM meetings
+            WHERE id = ?
+            """,
+            (meeting_id,)
+        ).fetchone()
 
-        cursor.execute("""
-            INSERT INTO meetings
-            (
-                title,
-                participants,
-                transcript,
-                summary,
-                created_at
-            )
-            VALUES (?, ?, ?, ?, ?)
-        """, (
-            "Analyzed Meeting",
-            participant_text,
-            transcript,
-            summary,
-            datetime.now().strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-        ))
-
-        meeting_id = cursor.lastrowid
-
-        conn.commit()
         conn.close()
 
-        extract_tasks(
-            transcript,
-            meeting_id
-        )
+        if meeting_data:
 
-        return redirect(
-            "/dashboard"
-        )
+            extract_tasks(
+                meeting_data["transcript"],
+                meeting_id
+            )
 
-    except Exception as e:
-
-        print(
-            "ANALYZE ERROR:",
-            str(e)
-        )
-
-        return f"""
-        <h2>Analysis failed</h2>
-        <p>{str(e)}</p>
-        <a href="/upload_audio">Go Back</a>
-        """, 500
-
-    finally:
-
-        if os.path.exists(file_path):
-
-            try:
-                os.remove(file_path)
-
-            except Exception:
-                pass
+    return redirect("/dashboard")
 
 
 # ============================================================
-# ERROR HANDLERS
+# HEALTH CHECK
 # ============================================================
 
-@app.errorhandler(413)
-def file_too_large(error):
+@app.route("/health")
+def health():
 
-    return """
-    <h2>File Too Large</h2>
-    <p>Maximum audio file size is 25 MB.</p>
-    <a href="/upload_audio">Upload another file</a>
-    """, 413
-
-
-@app.errorhandler(404)
-def page_not_found(error):
-
-    return """
-    <h2>Page Not Found</h2>
-    <a href="/">Go Home</a>
-    """, 404
-
-
-@app.errorhandler(500)
-def internal_error(error):
-
-    return """
-    <h2>Internal Server Error</h2>
-    <p>Please try again.</p>
-    <a href="/">Go Home</a>
-    """, 500
+    return jsonify({
+        "status": "ok",
+        "app": "Meet2ActionAI"
+    })
 
 
 # ============================================================
@@ -1512,29 +1295,24 @@ def internal_error(error):
 # ============================================================
 
 init_db()
-
-try:
-    cleanup_old_tasks()
-except Exception as e:
-    print(
-        "TASK CLEANUP ERROR:",
-        str(e)
-    )
+cleanup_old_tasks()
 
 
 # ============================================================
-# LOCAL RUN
+# RUN
 # ============================================================
 
 if __name__ == "__main__":
 
+    port = int(
+        os.environ.get(
+            "PORT",
+            5000
+        )
+    )
+
     app.run(
         host="0.0.0.0",
-        port=int(
-            os.environ.get(
-                "PORT",
-                5000
-            )
-        ),
+        port=port,
         debug=False
     )
