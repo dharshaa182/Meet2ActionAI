@@ -1,312 +1,440 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+
 <head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
     <title>Meeting Details - Meet2Action</title>
 
     <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             margin: 0;
             font-family: Arial, sans-serif;
             background: #f5f7fb;
-            color: #111;
-        }
-
-        .navbar {
-            background: #111;
-            color: white;
-            padding: 18px 7%;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-        }
-
-        .navbar a {
-            color: white;
-            text-decoration: none;
-            margin-left: 20px;
+            color: #1f2937;
         }
 
         .container {
-            max-width: 1000px;
+            width: 90%;
+            max-width: 1100px;
             margin: 40px auto;
-            padding: 0 20px;
+        }
+
+        .back {
+            display: inline-block;
+            margin-bottom: 20px;
+            text-decoration: none;
+            color: #2563eb;
+            font-weight: bold;
+        }
+
+        .header-card,
+        .section {
+            background: white;
+            border-radius: 14px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
         }
 
         h1 {
-            text-align: center;
-            margin-bottom: 30px;
+            margin-top: 0;
+            font-size: 30px;
         }
 
-        .card {
-            background: white;
-            padding: 25px;
-            margin-bottom: 25px;
-            border-radius: 14px;
-            box-shadow: 0 3px 12px rgba(0,0,0,0.08);
+        h2 {
+            margin-top: 0;
         }
 
-        .info {
+        .participants {
             color: #555;
-            line-height: 1.7;
+            margin-top: 10px;
         }
 
         .summary {
-            background: #f5f7fb;
-            padding: 18px;
-            border-radius: 10px;
             line-height: 1.7;
+            color: #444;
         }
 
         .transcript {
-            background: #111;
-            color: white;
-            padding: 20px;
+            background: #f8fafc;
+            padding: 18px;
             border-radius: 10px;
             line-height: 1.7;
             white-space: pre-wrap;
         }
 
-        .task {
-            border: 1px solid #eee;
+        .task-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
             padding: 18px;
-            margin: 15px 0;
-            border-radius: 10px;
+            margin-bottom: 15px;
         }
 
-        .task h3 {
-            margin-top: 0;
+        .task-title {
+            font-size: 17px;
+            font-weight: bold;
+            margin-bottom: 15px;
         }
 
-        .badge {
-            display: inline-block;
-            padding: 6px 10px;
-            margin: 5px 5px 0 0;
-            border-radius: 20px;
-            font-size: 13px;
+        .info {
+            margin: 10px 0;
+        }
+
+        .owner-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .owner-form {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        select {
+            padding: 9px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            background: white;
+            font-size: 14px;
+        }
+
+        button {
+            padding: 9px 15px;
+            border: none;
+            border-radius: 7px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
             font-weight: bold;
         }
 
-        .high {
-            background: #ffe1e1;
-            color: #b00000;
+        button:hover {
+            opacity: 0.9;
         }
 
-        .medium {
-            background: #fff0c7;
-            color: #8a6200;
+        .priority {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            background: #e5e7eb;
+            font-size: 13px;
         }
 
-        .low {
-            background: #e5f4e5;
-            color: #247024;
-        }
-
-        .status {
-            background: #eee;
-            color: #444;
+        .pending {
+            color: #d97706;
+            font-weight: bold;
         }
 
         .completed {
-            background: #e5f4e5;
-            color: #247024;
+            color: #16a34a;
+            font-weight: bold;
         }
 
-        .overdue {
-            background: #ffe1e1;
-            color: #b00000;
-        }
-
-        .complete-btn {
+        .complete {
             display: inline-block;
-            margin-top: 12px;
-            padding: 9px 15px;
-            background: #111;
+            margin-top: 10px;
+            padding: 9px 14px;
+            background: #16a34a;
             color: white;
             text-decoration: none;
             border-radius: 7px;
-        }
-
-        .back {
-            display: inline-block;
-            padding: 12px 20px;
-            background: white;
-            color: #111;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            text-decoration: none;
             font-weight: bold;
         }
 
         .empty {
-            text-align: center;
             color: #777;
         }
+
     </style>
+
 </head>
+
 
 <body>
 
-    <div class="navbar">
+<div class="container">
 
-        <div class="logo">
-            Meet2Action
-        </div>
+    <a href="/history" class="back">
+        ← Back to Meeting History
+    </a>
 
-        <div>
-            <a href="/">Home</a>
-            <a href="/dashboard">Dashboard</a>
-            <a href="/history">History</a>
+
+    <!-- MEETING -->
+
+    <div class="header-card">
+
+        <h1>
+            {{ meeting[1] }}
+        </h1>
+
+        <div class="participants">
+            👤 Participants:
+            {{ meeting[2] }}
         </div>
 
     </div>
 
 
-    <div class="container">
+    <!-- SUMMARY -->
 
-        <h1>📋 Meeting Details</h1>
+    <div class="section">
 
+        <h2>
+            📝 Meeting Summary
+        </h2>
 
-        <!-- MEETING INFO -->
-
-        <div class="card">
-
-            <h2>{{ meeting[1] }}</h2>
-
-            <p class="info">
-                👤 <strong>Participants:</strong>
-                {{ meeting[2] }}
-            </p>
-
+        <div class="summary">
+            {{ meeting[4] }}
         </div>
 
+    </div>
 
-        <!-- SUMMARY -->
 
-        <div class="card">
+    <!-- TRANSCRIPT -->
 
-            <h2>📝 Meeting Summary</h2>
+    <div class="section">
 
-            <div class="summary">
-                {{ meeting[4] }}
-            </div>
+        <h2>
+            🎙️ Full Transcript
+        </h2>
 
+        <div class="transcript">
+            {{ meeting[3] }}
         </div>
 
-
-        <!-- TRANSCRIPT -->
-
-        <div class="card">
-
-            <h2>🎙️ Full Transcript</h2>
-
-            <div class="transcript">
-                {{ meeting[3] }}
-            </div>
-
-        </div>
+    </div>
 
 
-        <!-- ACTION ITEMS -->
+    <!-- ACTION ITEMS -->
 
-        <div class="card">
+    <div class="section">
 
-            <h2>✅ Action Items</h2>
-
-            {% if tasks %}
-
-                {% for task in tasks %}
-
-                    <div class="task">
-
-                        <h3>
-                            {{ loop.index }}. {{ task[1] }}
-                        </h3>
-
-                        <p class="info">
-                            👤 <strong>Owner:</strong>
-                            {{ task[2] }}
-                        </p>
-
-                        <p class="info">
-                            📅 <strong>Deadline:</strong>
-                            {{ task[3] }}
-                        </p>
-
-                        {% if task[4] == "High" %}
-
-                            <span class="badge high">
-                                🔴 High Priority
-                            </span>
-
-                        {% elif task[4] == "Medium" %}
-
-                            <span class="badge medium">
-                                🟡 Medium Priority
-                            </span>
-
-                        {% else %}
-
-                            <span class="badge low">
-                                🟢 Low Priority
-                            </span>
-
-                        {% endif %}
+        <h2>
+            ✅ Action Items
+        </h2>
 
 
-                        {% if task[5] == "Completed" %}
+        {% if tasks %}
 
-                            <span class="badge completed">
-                                ✓ Completed
-                            </span>
+            {% for task in tasks %}
 
-                        {% elif task[5] == "Overdue" %}
+            <div class="task-card">
 
-                            <span class="badge overdue">
-                                ⚠️ Overdue
-                            </span>
 
-                        {% else %}
+                <div class="task-title">
 
-                            <span class="badge status">
-                                ⏳ Pending
-                            </span>
+                    {{ loop.index }}.
+                    {{ task[2] }}
 
-                            <br>
+                </div>
 
-                            <a
-                                class="complete-btn"
-                                href="/complete/{{ task[0] }}"
-                            >
-                                ✓ Mark as Completed
-                            </a>
 
-                        {% endif %}
+                <!-- OWNER -->
+
+                <div class="info">
+
+                    <div class="owner-row">
+
+                        <strong>
+                            👤 Owner:
+                        </strong>
+
+
+                        <form
+                            class="owner-form"
+                            method="POST"
+                            action="/update_owner/{{ task[0] }}"
+                        >
+
+                            <select name="owner">
+
+                                <option value="Unassigned"
+                                    {% if task[3] == "Unassigned" %}
+                                    selected
+                                    {% endif %}
+                                >
+                                    Unassigned
+                                </option>
+
+
+                                <option value="Dharshan"
+                                    {% if task[3] == "Dharshan" %}
+                                    selected
+                                    {% endif %}
+                                >
+                                    Dharshan
+                                </option>
+
+
+                                <option value="Arun"
+                                    {% if task[3] == "Arun" %}
+                                    selected
+                                    {% endif %}
+                                >
+                                    Arun
+                                </option>
+
+
+                                <option value="Pugal"
+                                    {% if task[3] == "Pugal" %}
+                                    selected
+                                    {% endif %}
+                                >
+                                    Pugal
+                                </option>
+
+
+                                <option value="Mubeen"
+                                    {% if task[3] == "Mubeen" %}
+                                    selected
+                                    {% endif %}
+                                >
+                                    Mubeen
+                                </option>
+
+
+                                <option value="Bala"
+                                    {% if task[3] == "Bala" %}
+                                    selected
+                                    {% endif %}
+                                >
+                                    Bala
+                                </option>
+
+
+                                <option value="Pugazhendhi"
+                                    {% if task[3] == "Pugazhendhi" %}
+                                    selected
+                                    {% endif %}
+                                >
+                                    Pugazhendhi
+                                </option>
+
+
+                                <option value="Naveen"
+                                    {% if task[3] == "Naveen" %}
+                                    selected
+                                    {% endif %}
+                                >
+                                    Naveen
+                                </option>
+
+
+                                <option value="Karthik"
+                                    {% if task[3] == "Karthik" %}
+                                    selected
+                                    {% endif %}
+                                >
+                                    Karthik
+                                </option>
+
+
+                                <option value="Rahul"
+                                    {% if task[3] == "Rahul" %}
+                                    selected
+                                    {% endif %}
+                                >
+                                    Rahul
+                                </option>
+
+                            </select>
+
+
+                            <button type="submit">
+                                Save
+                            </button>
+
+                        </form>
 
                     </div>
 
-                {% endfor %}
-
-            {% else %}
-
-                <div class="empty">
-                    <p>No action items detected.</p>
                 </div>
 
-            {% endif %}
 
-        </div>
+                <!-- DEADLINE -->
+
+                <div class="info">
+
+                    📅
+                    <strong>Deadline:</strong>
+                    {{ task[4] }}
+
+                </div>
 
 
-        <a class="back" href="/history">
-            ← Back to Meeting History
-        </a>
+                <!-- PRIORITY -->
+
+                <div class="info">
+
+                    🟢
+                    <span class="priority">
+
+                        {{ task[5] }} Priority
+
+                    </span>
+
+                </div>
+
+
+                <!-- STATUS -->
+
+                <div class="info">
+
+                    {% if task[6] == "Completed" %}
+
+                        <span class="completed">
+                            ✅ Completed
+                        </span>
+
+                    {% else %}
+
+                        <span class="pending">
+                            ⏳ Pending
+                        </span>
+
+                        <br>
+
+                        <a
+                            class="complete"
+                            href="/complete/{{ task[0] }}"
+                        >
+                            ✓ Mark as Completed
+                        </a>
+
+                    {% endif %}
+
+                </div>
+
+
+            </div>
+
+            {% endfor %}
+
+        {% else %}
+
+            <p class="empty">
+                No action items found for this meeting.
+            </p>
+
+        {% endif %}
 
     </div>
 
+</div>
+
 </body>
+
 </html>
