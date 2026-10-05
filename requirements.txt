@@ -1,0 +1,4 @@
+Flask
+gunicorn
+faster-whisper
+Werkzeug

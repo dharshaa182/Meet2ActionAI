@@ -2,6 +2,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime
+
 from flask import (
     Flask,
     request,
@@ -10,7 +11,13 @@ from flask import (
     render_template,
     flash
 )
+
 from werkzeug.utils import secure_filename
+
+
+# =========================================================
+# OPTIONAL WHISPER IMPORT
+# =========================================================
 
 try:
     from faster_whisper import WhisperModel
@@ -29,15 +36,30 @@ app.secret_key = os.environ.get(
     "meet2actionai-secret-key"
 )
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
 
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
-DB_PATH = os.path.join(BASE_DIR, "meet2action.db")
+UPLOAD_FOLDER = os.path.join(
+    BASE_DIR,
+    "uploads"
+)
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+DB_PATH = os.path.join(
+    BASE_DIR,
+    "meet2action.db"
+)
+
+os.makedirs(
+    UPLOAD_FOLDER,
+    exist_ok=True
+)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
+
+app.config["MAX_CONTENT_LENGTH"] = (
+    100 * 1024 * 1024
+)
 
 
 # =========================================================
@@ -48,26 +70,30 @@ whisper_model = None
 
 
 def get_whisper_model():
+
     global whisper_model
 
-    if whisper_model is None:
+    if whisper_model is not None:
+        return whisper_model
 
-        if WhisperModel is None:
-            raise RuntimeError(
-                "faster-whisper is not installed."
-            )
-
-        print("Loading Whisper model...")
-
-        whisper_model = WhisperModel(
-            "tiny",
-            device="cpu",
-            compute_type="int8",
-            cpu_threads=1,
-            num_workers=1
+    if WhisperModel is None:
+        raise RuntimeError(
+            "faster-whisper is not installed."
         )
 
-        print("Whisper model loaded successfully.")
+    print("Loading Whisper model...")
+
+    whisper_model = WhisperModel(
+        "tiny",
+        device="cpu",
+        compute_type="int8",
+        cpu_threads=1,
+        num_workers=1
+    )
+
+    print(
+        "Whisper model loaded successfully."
+    )
 
     return whisper_model
 
@@ -77,14 +103,20 @@ def get_whisper_model():
 # =========================================================
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+
+    conn = sqlite3.connect(
+        DB_PATH
+    )
+
     conn.row_factory = sqlite3.Row
+
     return conn
 
 
 def init_db():
 
     conn = get_db()
+
     cur = conn.cursor()
 
     # -----------------------------------------------------
@@ -116,7 +148,8 @@ def init_db():
             priority TEXT,
             status TEXT DEFAULT 'Pending',
             created_at TEXT,
-            FOREIGN KEY(meeting_id) REFERENCES meetings(id)
+            FOREIGN KEY(meeting_id)
+                REFERENCES meetings(id)
         )
     """)
 
@@ -145,10 +178,12 @@ def init_db():
     ]
 
     if "participants" not in meeting_columns:
+
         try:
-            cur.execute(
-                "ALTER TABLE meetings ADD COLUMN participants TEXT"
-            )
+            cur.execute("""
+                ALTER TABLE meetings
+                ADD COLUMN participants TEXT
+            """)
         except Exception as e:
             print(
                 "Participants migration warning:",
@@ -156,10 +191,12 @@ def init_db():
             )
 
     if "created_at" not in meeting_columns:
+
         try:
-            cur.execute(
-                "ALTER TABLE meetings ADD COLUMN created_at TEXT"
-            )
+            cur.execute("""
+                ALTER TABLE meetings
+                ADD COLUMN created_at TEXT
+            """)
         except Exception as e:
             print(
                 "Meeting created_at migration warning:",
@@ -178,10 +215,12 @@ def init_db():
     ]
 
     if "meeting_id" not in task_columns:
+
         try:
-            cur.execute(
-                "ALTER TABLE tasks ADD COLUMN meeting_id INTEGER"
-            )
+            cur.execute("""
+                ALTER TABLE tasks
+                ADD COLUMN meeting_id INTEGER
+            """)
         except Exception as e:
             print(
                 "Task meeting_id migration warning:",
@@ -189,10 +228,12 @@ def init_db():
             )
 
     if "created_at" not in task_columns:
+
         try:
-            cur.execute(
-                "ALTER TABLE tasks ADD COLUMN created_at TEXT"
-            )
+            cur.execute("""
+                ALTER TABLE tasks
+                ADD COLUMN created_at TEXT
+            """)
         except Exception as e:
             print(
                 "Task created_at migration warning:",
@@ -200,10 +241,12 @@ def init_db():
             )
 
     if "priority" not in task_columns:
+
         try:
-            cur.execute(
-                "ALTER TABLE tasks ADD COLUMN priority TEXT"
-            )
+            cur.execute("""
+                ALTER TABLE tasks
+                ADD COLUMN priority TEXT
+            """)
         except Exception as e:
             print(
                 "Task priority migration warning:",
@@ -211,10 +254,12 @@ def init_db():
             )
 
     if "status" not in task_columns:
+
         try:
-            cur.execute(
-                "ALTER TABLE tasks ADD COLUMN status TEXT DEFAULT 'Pending'"
-            )
+            cur.execute("""
+                ALTER TABLE tasks
+                ADD COLUMN status TEXT DEFAULT 'Pending'
+            """)
         except Exception as e:
             print(
                 "Task status migration warning:",
@@ -222,7 +267,7 @@ def init_db():
             )
 
     # -----------------------------------------------------
-    # NULL safety
+    # NULL cleanup
     # -----------------------------------------------------
 
     try:
@@ -241,7 +286,8 @@ def init_db():
         cur.execute("""
             UPDATE tasks
             SET status = 'Pending'
-            WHERE status IS NULL OR status = ''
+            WHERE status IS NULL
+               OR status = ''
         """)
     except Exception as e:
         print(
@@ -250,6 +296,7 @@ def init_db():
         )
 
     conn.commit()
+
     conn.close()
 
 
@@ -278,9 +325,28 @@ def allowed_file(filename):
     if "." not in filename:
         return False
 
-    extension = filename.rsplit(".", 1)[1].lower()
+    extension = filename.rsplit(
+        ".",
+        1
+    )[1].lower()
 
     return extension in ALLOWED_EXTENSIONS
+
+
+# =========================================================
+# TEXT HELPERS
+# =========================================================
+
+def clean_text(text):
+
+    if not text:
+        return ""
+
+    return re.sub(
+        r"\s+",
+        " ",
+        str(text)
+    ).strip()
 
 
 # =========================================================
@@ -289,38 +355,47 @@ def allowed_file(filename):
 
 def generate_summary(transcript):
 
+    transcript = clean_text(
+        transcript
+    )
+
     if not transcript:
         return "No transcript available."
 
-    text = re.sub(
-        r"\s+",
-        " ",
+    # Use the first few meaningful sentences
+    sentences = re.split(
+        r"(?<=[.!?])\s+",
         transcript
-    ).strip()
+    )
 
-    if len(text) <= 500:
-        return text
+    sentences = [
+        clean_text(sentence)
+        for sentence in sentences
+        if clean_text(sentence)
+    ]
 
-    return text[:500].rstrip() + "..."
+    if len(sentences) <= 4:
+        summary = " ".join(
+            sentences
+        )
+    else:
+        summary = " ".join(
+            sentences[:4]
+        )
+
+    if len(summary) > 700:
+        summary = (
+            summary[:700]
+            .rstrip()
+            + "..."
+        )
+
+    return summary
 
 
 # =========================================================
-# TEXT NORMALIZATION
+# TASK NORMALIZATION
 # =========================================================
-
-def clean_text(text):
-
-    if not text:
-        return ""
-
-    text = re.sub(
-        r"\s+",
-        " ",
-        text
-    ).strip()
-
-    return text
-
 
 def normalize_task(task):
 
@@ -342,7 +417,8 @@ def normalize_task(task):
     # Named-person assignment
     task = re.sub(
         r"^[A-Za-z][A-Za-z0-9_-]*\s+"
-        r"(?:will|shall|can|is going to|has to|needs to|must)\s+",
+        r"(?:will|shall|can|is going to|"
+        r"has to|needs to|must)\s+",
         "",
         task,
         flags=re.I
@@ -366,14 +442,22 @@ def normalize_task(task):
         flags=re.I
     )
 
+    # Bullet / punctuation
     task = re.sub(
         r"^[,:;\-\s]+",
         "",
         task
     )
 
+    task = task.strip(
+        " .,!;:"
+    )
+
     if task:
-        task = task[0].upper() + task[1:]
+        task = (
+            task[0].upper()
+            + task[1:]
+        )
 
     return task.strip()
 
@@ -397,7 +481,9 @@ KNOWN_NAMES = {
 
 def detect_owner(sentence):
 
-    text = clean_text(sentence)
+    text = clean_text(
+        sentence
+    )
 
     # Self assignment
     if re.search(
@@ -423,7 +509,8 @@ def detect_owner(sentence):
             r"\b"
             + re.escape(name_key)
             + r"\b\s+"
-            r"(?:will|shall|can|is going to|has to|needs to|must)"
+            r"(?:will|shall|can|is going to|"
+            r"has to|needs to|must)"
         )
 
         if re.search(
@@ -433,17 +520,18 @@ def detect_owner(sentence):
         ):
             return display_name
 
-    # Generic named person
+    # Generic person
     match = re.search(
         r"\b([A-Z][a-z]{2,})\s+"
-        r"(?:will|shall|can|is going to|has to|needs to|must)\b",
+        r"(?:will|shall|can|is going to|"
+        r"has to|needs to|must)\b",
         text
     )
 
     if match:
         return match.group(1)
 
-    # Assigned to / responsible for
+    # Assigned / responsible
     match = re.search(
         r"(?:assigned to|responsible for)\s+"
         r"([A-Z][a-z]{2,})",
@@ -474,26 +562,50 @@ WEEKDAYS = {
 
 def detect_deadline(sentence):
 
-    text = clean_text(sentence)
+    text = clean_text(
+        sentence
+    )
 
-    if re.search(r"\btoday\b", text, re.I):
+    if re.search(
+        r"\btoday\b",
+        text,
+        re.I
+    ):
         return "Today"
 
-    if re.search(r"\btomorrow\b", text, re.I):
+    if re.search(
+        r"\btomorrow\b",
+        text,
+        re.I
+    ):
         return "Tomorrow"
 
-    if re.search(r"\btonight\b", text, re.I):
+    if re.search(
+        r"\btonight\b",
+        text,
+        re.I
+    ):
         return "Tonight"
 
-    if re.search(r"\bthis week\b", text, re.I):
+    if re.search(
+        r"\bthis week\b",
+        text,
+        re.I
+    ):
         return "This week"
 
-    if re.search(r"\bnext week\b", text, re.I):
+    if re.search(
+        r"\bnext week\b",
+        text,
+        re.I
+    ):
         return "Next week"
 
+    # Weekday
     weekday_pattern = (
         r"\b(?:by|before|on)?\s*"
-        r"(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
+        r"(monday|tuesday|wednesday|"
+        r"thursday|friday|saturday|sunday)\b"
     )
 
     match = re.search(
@@ -507,6 +619,7 @@ def detect_deadline(sentence):
             match.group(1).lower()
         ]
 
+    # Month + date
     month_pattern = (
         r"\b("
         r"january|february|march|april|may|june|"
@@ -534,6 +647,7 @@ def detect_deadline(sentence):
 
         return f"{month} {day}"
 
+    # Date + month
     reverse_month_pattern = (
         r"\b(\d{1,2})\s+"
         r"(january|february|march|april|may|june|"
@@ -558,6 +672,7 @@ def detect_deadline(sentence):
 
         return f"{month} {day}"
 
+    # Numeric date
     numeric_date = re.search(
         r"\b(?:by|before|on)?\s*"
         r"(\d{1,2})[/-](\d{1,2})"
@@ -581,12 +696,14 @@ def detect_deadline(sentence):
 
 
 # =========================================================
-# PRIORITY
+# PRIORITY DETECTION
 # =========================================================
 
 def detect_priority(sentence):
 
-    text = clean_text(sentence).lower()
+    text = clean_text(
+        sentence
+    ).lower()
 
     high_words = [
         "urgent",
@@ -652,14 +769,16 @@ IGNORE_PHRASES = [
 
 def is_ignored_sentence(sentence):
 
-    text = clean_text(sentence).lower()
+    text = clean_text(
+        sentence
+    ).lower()
 
     for phrase in IGNORE_PHRASES:
 
         if phrase in text:
             return True
 
-    # Questions are discussion
+    # Questions are discussions
     if text.endswith("?"):
         return True
 
@@ -682,12 +801,16 @@ def is_ignored_sentence(sentence):
 
 def is_real_task(sentence):
 
-    text = clean_text(sentence)
+    text = clean_text(
+        sentence
+    )
 
     if not text:
         return False
 
-    if is_ignored_sentence(text):
+    if is_ignored_sentence(
+        text
+    ):
         return False
 
     lower = text.lower()
@@ -695,13 +818,14 @@ def is_real_task(sentence):
     # Explicit assignment
     if re.search(
         r"\b[A-Za-z][A-Za-z0-9_-]*\s+"
-        r"(?:will|shall|can|is going to|has to|needs to|must)\b",
+        r"(?:will|shall|can|is going to|"
+        r"has to|needs to|must)\b",
         text,
         re.I
     ):
         return True
 
-    # First person action
+    # First-person action
     if re.search(
         r"\b(?:I|we|our team)\s+"
         r"(?:will|shall|can|need to|have to|must|"
@@ -743,15 +867,17 @@ def is_real_task(sentence):
     for verb in action_verbs:
 
         if re.search(
-            r"\b" + re.escape(verb) + r"\b",
+            r"\b"
+            + re.escape(verb)
+            + r"\b",
             lower
         ):
             return True
 
     # Explicit obligation
     if re.search(
-        r"\b(?:need to|needs to|has to|have to|must|"
-        r"responsible for|assigned to)\b",
+        r"\b(?:need to|needs to|has to|have to|"
+        r"must|responsible for|assigned to)\b",
         lower
     ):
         return True
@@ -765,15 +891,19 @@ def is_real_task(sentence):
 
 def split_sentences(transcript):
 
-    text = clean_text(transcript)
+    text = clean_text(
+        transcript
+    )
 
     if not text:
         return []
 
-    # Split Whisper output around common assignments
+    # Add boundaries before common assignments
     text = re.sub(
-        r"\s+(?=(?:I|We|They|The team|[A-Z][a-z]+)\s+"
-        r"(?:will|shall|can|must|needs to|has to)\b)",
+        r"\s+(?=(?:I|We|They|The team|"
+        r"[A-Z][a-z]+)\s+"
+        r"(?:will|shall|can|must|needs to|"
+        r"has to)\b)",
         ". ",
         text
     )
@@ -801,11 +931,14 @@ def extract_tasks(transcript):
     )
 
     tasks = []
+
     seen = set()
 
     for sentence in sentences:
 
-        if not is_real_task(sentence):
+        if not is_real_task(
+            sentence
+        ):
             continue
 
         sentence = sentence.strip(
@@ -831,7 +964,9 @@ def extract_tasks(transcript):
         if not task_text:
             continue
 
-        if len(task_text.split()) < 3:
+        if len(
+            task_text.split()
+        ) < 3:
             continue
 
         duplicate_key = re.sub(
@@ -843,7 +978,9 @@ def extract_tasks(transcript):
         if duplicate_key in seen:
             continue
 
-        seen.add(duplicate_key)
+        seen.add(
+            duplicate_key
+        )
 
         tasks.append({
             "task": task_text,
@@ -856,19 +993,25 @@ def extract_tasks(transcript):
 
 
 # =========================================================
-# DELETE TASKS FOR ONE MEETING
+# DELETE MEETING TASKS
 # =========================================================
 
-def delete_meeting_tasks(meeting_id):
+def delete_meeting_tasks(
+    meeting_id
+):
 
     conn = get_db()
 
     conn.execute(
-        "DELETE FROM tasks WHERE meeting_id = ?",
+        """
+        DELETE FROM tasks
+        WHERE meeting_id = ?
+        """,
         (meeting_id,)
     )
 
     conn.commit()
+
     conn.close()
 
 
@@ -887,6 +1030,7 @@ def cleanup_duplicate_tasks():
     """).fetchall()
 
     seen = set()
+
     delete_ids = []
 
     for row in rows:
@@ -929,7 +1073,10 @@ def cleanup_duplicate_tasks():
     if delete_ids:
 
         conn.executemany(
-            "DELETE FROM tasks WHERE id = ?",
+            """
+            DELETE FROM tasks
+            WHERE id = ?
+            """,
             [
                 (task_id,)
                 for task_id in delete_ids
@@ -937,6 +1084,7 @@ def cleanup_duplicate_tasks():
         )
 
     conn.commit()
+
     conn.close()
 
 
@@ -944,7 +1092,9 @@ def cleanup_duplicate_tasks():
 # TRANSCRIPTION
 # =========================================================
 
-def transcribe_audio(audio_path):
+def transcribe_audio(
+    audio_path
+):
 
     model = get_whisper_model()
 
@@ -962,7 +1112,9 @@ def transcribe_audio(audio_path):
 
     for segment in segments:
 
-        text = segment.text.strip()
+        text = clean_text(
+            segment.text
+        )
 
         if text:
             text_parts.append(
@@ -1040,6 +1192,16 @@ def upload_audio():
         file.filename
     )
 
+    if not original_name:
+
+        flash(
+            "Invalid filename."
+        )
+
+        return redirect(
+            url_for("home")
+        )
+
     timestamp = datetime.now().strftime(
         "%Y%m%d_%H%M%S_%f"
     )
@@ -1055,7 +1217,9 @@ def upload_audio():
         filename
     )
 
-    file.save(filepath)
+    file.save(
+        filepath
+    )
 
     print(
         f"Audio saved: {filepath}"
@@ -1082,13 +1246,35 @@ def upload_audio():
             url_for("home")
         )
 
+    # Remove temporary uploaded file
+    try:
+        os.remove(
+            filepath
+        )
+    except Exception as e:
+        print(
+            "Upload cleanup warning:",
+            repr(e)
+        )
+
+    if not transcript:
+
+        flash(
+            "No speech could be detected in the audio."
+        )
+
+        return redirect(
+            url_for("home")
+        )
+
     summary = generate_summary(
         transcript
     )
 
     conn = get_db()
 
-    cursor = conn.execute("""
+    cursor = conn.execute(
+        """
         INSERT INTO meetings
         (
             title,
@@ -1098,17 +1284,20 @@ def upload_audio():
             created_at
         )
         VALUES (?, ?, ?, ?, ?)
-    """, (
-        "Audio Meeting",
-        transcript,
-        summary,
-        "",
-        datetime.now().isoformat()
-    ))
+        """,
+        (
+            "Audio Meeting",
+            transcript,
+            summary,
+            "",
+            datetime.now().isoformat()
+        )
+    )
 
     meeting_id = cursor.lastrowid
 
     conn.commit()
+
     conn.close()
 
     return redirect(
@@ -1120,7 +1309,7 @@ def upload_audio():
 
 
 # =========================================================
-# NOTES MEETING
+# CREATE NOTES MEETING
 # =========================================================
 
 @app.route(
@@ -1158,7 +1347,8 @@ def create_meeting():
 
     conn = get_db()
 
-    cursor = conn.execute("""
+    cursor = conn.execute(
+        """
         INSERT INTO meetings
         (
             title,
@@ -1168,17 +1358,20 @@ def create_meeting():
             created_at
         )
         VALUES (?, ?, ?, ?, ?)
-    """, (
-        title,
-        transcript,
-        summary,
-        "",
-        datetime.now().isoformat()
-    ))
+        """,
+        (
+            title,
+            transcript,
+            summary,
+            "",
+            datetime.now().isoformat()
+        )
+    )
 
     meeting_id = cursor.lastrowid
 
     conn.commit()
+
     conn.close()
 
     return redirect(
@@ -1196,17 +1389,20 @@ def create_meeting():
 @app.route(
     "/meeting/<int:meeting_id>"
 )
-def meeting_page(meeting_id):
+def meeting_page(
+    meeting_id
+):
 
     conn = get_db()
 
-    meeting = conn.execute("""
+    meeting = conn.execute(
+        """
         SELECT *
         FROM meetings
         WHERE id = ?
-    """, (
-        meeting_id,
-    )).fetchone()
+        """,
+        (meeting_id,)
+    ).fetchone()
 
     conn.close()
 
@@ -1225,21 +1421,26 @@ def meeting_page(meeting_id):
 
 # =========================================================
 # ANALYZE
-# IMPORTANT: GET + POST
+# IMPORTANT:
+# POST ONLY
 # =========================================================
 
 @app.route(
     "/analyze",
-    methods=["GET", "POST"]
+    methods=["POST"]
 )
 def analyze():
 
-    # Accept meeting_id from GET or POST
-    meeting_id = request.values.get(
-        "meeting_id"
-    )
+    meeting_id = request.form.get(
+        "meeting_id",
+        ""
+    ).strip()
 
     if not meeting_id:
+
+        flash(
+            "Meeting ID is missing."
+        )
 
         return redirect(
             url_for("home")
@@ -1251,7 +1452,14 @@ def analyze():
             meeting_id
         )
 
-    except (ValueError, TypeError):
+    except (
+        ValueError,
+        TypeError
+    ):
+
+        flash(
+            "Invalid meeting ID."
+        )
 
         return redirect(
             url_for("home")
@@ -1259,13 +1467,18 @@ def analyze():
 
     conn = get_db()
 
-    meeting = conn.execute("""
-        SELECT *
+    meeting = conn.execute(
+        """
+        SELECT
+            id,
+            title,
+            transcript,
+            summary
         FROM meetings
         WHERE id = ?
-    """, (
-        meeting_id,
-    )).fetchone()
+        """,
+        (meeting_id,)
+    ).fetchone()
 
     conn.close()
 
@@ -1276,17 +1489,35 @@ def analyze():
             404
         )
 
-    transcript = (
-        meeting["transcript"]
-        or ""
+    transcript = clean_text(
+        meeting["transcript"] or ""
     )
 
+    if not transcript:
+
+        flash(
+            "No transcript available for analysis."
+        )
+
+        return redirect(
+            url_for(
+                "meeting_page",
+                meeting_id=meeting_id
+            )
+        )
+
+    # -----------------------------------------------------
     # Extract tasks
+    # -----------------------------------------------------
+
     tasks = extract_tasks(
         transcript
     )
 
-    # Delete old tasks ONLY for this meeting
+    # -----------------------------------------------------
+    # Replace ONLY selected meeting tasks
+    # -----------------------------------------------------
+
     delete_meeting_tasks(
         meeting_id
     )
@@ -1297,7 +1528,8 @@ def analyze():
 
     for item in tasks:
 
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO tasks
             (
                 meeting_id,
@@ -1309,42 +1541,55 @@ def analyze():
                 created_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (
-            meeting_id,
-            item["task"],
-            item["owner"],
-            item["deadline"],
-            item["priority"],
-            "Pending",
-            now
-        ))
+            """,
+            (
+                meeting_id,
+                item["task"],
+                item["owner"],
+                item["deadline"],
+                item["priority"],
+                "Pending",
+                now
+            )
+        )
 
+    # -----------------------------------------------------
     # Update summary
+    # -----------------------------------------------------
+
     summary = generate_summary(
         transcript
     )
 
-    conn.execute("""
+    conn.execute(
+        """
         UPDATE meetings
         SET summary = ?
         WHERE id = ?
-    """, (
-        summary,
-        meeting_id
-    ))
+        """,
+        (
+            summary,
+            meeting_id
+        )
+    )
 
     conn.commit()
+
     conn.close()
 
     print(
-        f"Meeting {meeting_id} analyzed."
+        f"[ANALYZE] Meeting ID: {meeting_id}"
     )
 
     print(
-        f"Tasks detected: {len(tasks)}"
+        f"[ANALYZE] Tasks detected: {len(tasks)}"
     )
 
-    # Go directly to selected meeting dashboard
+    # -----------------------------------------------------
+    # POST -> GET
+    # Refresh dashboard will NOT analyze again.
+    # -----------------------------------------------------
+
     return redirect(
         url_for(
             "dashboard",
@@ -1357,11 +1602,15 @@ def analyze():
 # DASHBOARD
 # =========================================================
 
-@app.route("/dashboard")
+@app.route(
+    "/dashboard"
+)
 def dashboard():
 
-    requested_meeting_id = request.args.get(
-        "meeting_id"
+    requested_meeting_id = (
+        request.args.get(
+            "meeting_id"
+        )
     )
 
     conn = get_db()
@@ -1376,55 +1625,78 @@ def dashboard():
                 requested_meeting_id
             )
 
-        except (ValueError, TypeError):
+        except (
+            ValueError,
+            TypeError
+        ):
 
             meeting_id = None
 
-    # No ID = latest meeting
+    # -----------------------------------------------------
+    # No ID -> latest meeting
+    # -----------------------------------------------------
+
     if meeting_id is None:
 
-        latest_meeting = conn.execute("""
+        latest_meeting = conn.execute(
+            """
             SELECT id
             FROM meetings
             ORDER BY id DESC
             LIMIT 1
-        """).fetchone()
+            """
+        ).fetchone()
 
         if latest_meeting:
 
-            meeting_id = latest_meeting["id"]
+            meeting_id = (
+                latest_meeting["id"]
+            )
 
-    # Only selected meeting tasks
+    # -----------------------------------------------------
+    # Current meeting
+    # -----------------------------------------------------
+
+    meeting = None
+
     if meeting_id:
 
-        tasks = conn.execute("""
+        meeting = conn.execute(
+            """
+            SELECT *
+            FROM meetings
+            WHERE id = ?
+            """,
+            (meeting_id,)
+        ).fetchone()
+
+    # -----------------------------------------------------
+    # Current meeting tasks ONLY
+    # -----------------------------------------------------
+
+    if meeting_id:
+
+        tasks = conn.execute(
+            """
             SELECT *
             FROM tasks
             WHERE meeting_id = ?
             ORDER BY id ASC
-        """, (
-            meeting_id,
-        )).fetchall()
+            """,
+            (meeting_id,)
+        ).fetchall()
 
     else:
 
         tasks = []
 
-    # Current meeting
-    meeting = None
-
-    if meeting_id:
-
-        meeting = conn.execute("""
-            SELECT *
-            FROM meetings
-            WHERE id = ?
-        """, (
-            meeting_id,
-        )).fetchone()
-
+    # -----------------------------------------------------
     # Counts
-    total_tasks = len(tasks)
+    # -----------------------------------------------------
+
+    total_tasks = len(
+        tasks
+    )
 
     pending_tasks = sum(
         1
@@ -1468,7 +1740,9 @@ def dashboard():
     "/update_owner/<int:task_id>",
     methods=["POST"]
 )
-def update_owner(task_id):
+def update_owner(
+    task_id
+):
 
     owner = request.form.get(
         "owner",
@@ -1480,16 +1754,20 @@ def update_owner(task_id):
 
     conn = get_db()
 
-    conn.execute("""
+    conn.execute(
+        """
         UPDATE tasks
         SET owner = ?
         WHERE id = ?
-    """, (
-        owner,
-        task_id
-    ))
+        """,
+        (
+            owner,
+            task_id
+        )
+    )
 
     conn.commit()
+
     conn.close()
 
     return redirect(
@@ -1499,24 +1777,27 @@ def update_owner(task_id):
 
 
 # =========================================================
-# COMPLETE TASK
+# COMPLETE / UNCOMPLETE TASK
 # =========================================================
 
 @app.route(
     "/complete/<int:task_id>",
     methods=["POST"]
 )
-def complete_task(task_id):
+def complete_task(
+    task_id
+):
 
     conn = get_db()
 
-    task = conn.execute("""
+    task = conn.execute(
+        """
         SELECT status
         FROM tasks
         WHERE id = ?
-    """, (
-        task_id,
-    )).fetchone()
+        """,
+        (task_id,)
+    ).fetchone()
 
     if task:
 
@@ -1525,22 +1806,25 @@ def complete_task(task_id):
             or "Pending"
         )
 
-        if current_status.lower() != "completed":
-
+        if (
+            current_status.lower()
+            != "completed"
+        ):
             new_status = "Completed"
-
         else:
-
             new_status = "Pending"
 
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE tasks
             SET status = ?
             WHERE id = ?
-        """, (
-            new_status,
-            task_id
-        ))
+            """,
+            (
+                new_status,
+                task_id
+            )
+        )
 
         conn.commit()
 
@@ -1556,12 +1840,15 @@ def complete_task(task_id):
 # HISTORY
 # =========================================================
 
-@app.route("/history")
+@app.route(
+    "/history"
+)
 def history():
 
     conn = get_db()
 
-    meetings = conn.execute("""
+    meetings = conn.execute(
+        """
         SELECT
             m.*,
             COUNT(t.id) AS task_count
@@ -1570,7 +1857,8 @@ def history():
             ON m.id = t.meeting_id
         GROUP BY m.id
         ORDER BY m.id DESC
-    """).fetchall()
+        """
+    ).fetchall()
 
     conn.close()
 
@@ -1584,17 +1872,22 @@ def history():
 # NOTIFICATIONS
 # =========================================================
 
-@app.route("/notifications")
+@app.route(
+    "/notifications"
+)
 def notifications():
 
     conn = get_db()
 
-    tasks = conn.execute("""
+    tasks = conn.execute(
+        """
         SELECT *
         FROM tasks
         WHERE status != 'Completed'
+           OR status IS NULL
         ORDER BY id DESC
-    """).fetchall()
+        """
+    ).fetchall()
 
     conn.close()
 
@@ -1608,16 +1901,20 @@ def notifications():
 # PROBLEMS
 # =========================================================
 
-@app.route("/problems")
+@app.route(
+    "/problems"
+)
 def problems():
 
     conn = get_db()
 
-    problems = conn.execute("""
+    problems = conn.execute(
+        """
         SELECT *
         FROM problems
         ORDER BY id DESC
-    """).fetchall()
+        """
+    ).fetchall()
 
     conn.close()
 
@@ -1631,7 +1928,9 @@ def problems():
 # HEALTH CHECK
 # =========================================================
 
-@app.route("/health")
+@app.route(
+    "/health"
+)
 def health():
 
     return {
@@ -1662,6 +1961,20 @@ def page_not_found(error):
     )
 
 
+@app.errorhandler(500)
+def internal_server_error(error):
+
+    print(
+        "Internal server error:",
+        repr(error)
+    )
+
+    return (
+        "Internal server error.",
+        500
+    )
+
+
 # =========================================================
 # STARTUP
 # =========================================================
@@ -1678,9 +1991,15 @@ cleanup_duplicate_tasks()
 if __name__ == "__main__":
 
     print()
-    print("======================================")
-    print("      Meet2ActionAI is starting")
-    print("======================================")
+    print(
+        "======================================"
+    )
+    print(
+        "       Meet2ActionAI is starting"
+    )
+    print(
+        "======================================"
+    )
     print()
 
     port = int(
