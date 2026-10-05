@@ -1,57 +1,65 @@
-from flask import Flask, render_template, request, redirect, jsonify
-import sqlite3
-import re
 import os
+import re
+import sqlite3
 from datetime import datetime
-from faster_whisper import WhisperModel
+from flask import (
+    Flask,
+    request,
+    redirect,
+    url_for,
+    render_template,
+    flash
+)
+from werkzeug.utils import secure_filename
+
+try:
+    from faster_whisper import WhisperModel
+except ImportError:
+    WhisperModel = None
+
+
+# =========================================================
+# APP CONFIG
+# =========================================================
 
 app = Flask(__name__)
 
-# =========================================================
-# PATHS / SETTINGS
-# =========================================================
+app.secret_key = os.environ.get(
+    "SECRET_KEY",
+    "meet2actionai-secret-key"
+)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-DB_NAME = os.path.join(BASE_DIR, "meet2action.db")
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+DB_PATH = os.path.join(BASE_DIR, "meet2action.db")
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
-
-ALLOWED_EXTENSIONS = {
-    "mp3",
-    "wav",
-    "m4a",
-    "mp4",
-    "webm",
-    "ogg",
-    "mpeg"
-}
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 
 
 # =========================================================
 # WHISPER MODEL
 # =========================================================
 
-model = None
+whisper_model = None
 
 
 def get_whisper_model():
-    """
-    Load Whisper only when transcription is required.
-    This makes Flask startup faster and safer for Render.
-    """
+    global whisper_model
 
-    global model
+    if whisper_model is None:
 
-    if model is None:
+        if WhisperModel is None:
+            raise RuntimeError(
+                "faster-whisper is not installed."
+            )
 
         print("Loading Whisper model...")
 
-        model = WhisperModel(
+        whisper_model = WhisperModel(
             "tiny",
             device="cpu",
             compute_type="int8",
@@ -61,7 +69,7 @@ def get_whisper_model():
 
         print("Whisper model loaded successfully.")
 
-    return model
+    return whisper_model
 
 
 # =========================================================
@@ -69,62 +77,27 @@ def get_whisper_model():
 # =========================================================
 
 def get_db():
-
-    conn = sqlite3.connect(DB_NAME)
-
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-
     return conn
 
 
 def init_db():
 
     conn = get_db()
+    cur = conn.cursor()
 
-    # -----------------------------------------------------
-    # Meetings
-    # -----------------------------------------------------
-
-    conn.execute(
-        """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS meetings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT,
-            participants TEXT NOT NULL DEFAULT 'Not specified',
             transcript TEXT,
             summary TEXT,
             created_at TEXT
         )
-        """
-    )
+    """)
 
-    # -----------------------------------------------------
-    # Upgrade old database
-    # -----------------------------------------------------
-
-    columns = [
-        row["name"]
-        for row in conn.execute(
-            "PRAGMA table_info(meetings)"
-        ).fetchall()
-    ]
-
-    if "participants" not in columns:
-
-        conn.execute(
-            """
-            ALTER TABLE meetings
-            ADD COLUMN participants TEXT NOT NULL
-            DEFAULT 'Not specified'
-            """
-        )
-
-    # -----------------------------------------------------
-    # Tasks
-    # -----------------------------------------------------
-
-    conn.execute(
-        """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             meeting_id INTEGER,
@@ -132,34 +105,83 @@ def init_db():
             owner TEXT,
             deadline TEXT,
             priority TEXT,
-            status TEXT DEFAULT 'Pending'
+            status TEXT DEFAULT 'Pending',
+            created_at TEXT,
+            FOREIGN KEY(meeting_id) REFERENCES meetings(id)
         )
-        """
-    )
+    """)
 
-    # -----------------------------------------------------
-    # Problems
-    # -----------------------------------------------------
-
-    conn.execute(
-        """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS problems (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             meeting_id INTEGER,
             problem TEXT,
             created_at TEXT
         )
-        """
-    )
+    """)
+
+    # -----------------------------------------------------
+    # Safe migration for older databases
+    # -----------------------------------------------------
+
+    columns = [
+        row["name"]
+        for row in cur.execute(
+            "PRAGMA table_info(meetings)"
+        ).fetchall()
+    ]
+
+    if "participants" not in columns:
+        try:
+            cur.execute(
+                "ALTER TABLE meetings ADD COLUMN participants TEXT"
+            )
+        except Exception:
+            pass
+
+    task_columns = [
+        row["name"]
+        for row in cur.execute(
+            "PRAGMA table_info(tasks)"
+        ).fetchall()
+    ]
+
+    if "meeting_id" not in task_columns:
+        try:
+            cur.execute(
+                "ALTER TABLE tasks ADD COLUMN meeting_id INTEGER"
+            )
+        except Exception:
+            pass
+
+    if "created_at" not in task_columns:
+        try:
+            cur.execute(
+                "ALTER TABLE tasks ADD COLUMN created_at TEXT"
+            )
+        except Exception:
+            pass
 
     conn.commit()
-
     conn.close()
 
 
 # =========================================================
-# FILE HELPERS
+# FILE VALIDATION
 # =========================================================
+
+ALLOWED_EXTENSIONS = {
+    "mp3",
+    "wav",
+    "m4a",
+    "mp4",
+    "mpeg",
+    "mpga",
+    "webm",
+    "ogg",
+    "flac"
+}
+
 
 def allowed_file(filename):
 
@@ -178,131 +200,176 @@ def allowed_file(filename):
 # SUMMARY
 # =========================================================
 
-def generate_summary(text):
+def generate_summary(transcript):
+
+    if not transcript:
+        return "No transcript available."
+
+    text = re.sub(r"\s+", " ", transcript).strip()
+
+    if len(text) <= 500:
+        return text
+
+    return text[:500].rstrip() + "..."
+
+
+# =========================================================
+# TEXT NORMALIZATION
+# =========================================================
+
+def clean_text(text):
 
     if not text:
+        return ""
 
-        return "No summary available."
+    text = re.sub(r"\s+", " ", text).strip()
 
-    clean = re.sub(
-        r"\s+",
-        " ",
-        text
-    ).strip()
+    return text
 
-    if len(clean) <= 250:
 
-        return clean
+def normalize_task(task):
 
-    sentences = re.split(
-        r"(?<=[.!?])\s+",
-        clean
+    task = clean_text(task)
+
+    # Remove speaker assignment prefixes.
+    task = re.sub(
+        r"^(?:"
+        r"i\s+(?:will|shall|can|am going to)\s+|"
+        r"we\s+(?:will|shall|can|are going to)\s+|"
+        r"they\s+(?:will|shall|can|are going to)\s+|"
+        r"you\s+(?:will|shall|can|are going to)\s+"
+        r")",
+        "",
+        task,
+        flags=re.I
     )
 
-    summary = " ".join(
-        sentences[:3]
-    ).strip()
+    # Remove named-person prefix.
+    task = re.sub(
+        r"^[A-Za-z][A-Za-z0-9_-]*\s+"
+        r"(?:will|shall|can|is going to|has to|needs to|must)\s+",
+        "",
+        task,
+        flags=re.I
+    )
 
-    if not summary:
+    # Remove common task prefixes.
+    task = re.sub(
+        r"^(?:"
+        r"we need to|"
+        r"we have to|"
+        r"we must|"
+        r"need to|"
+        r"needs to|"
+        r"has to|"
+        r"have to|"
+        r"must|"
+        r"should"
+        r")\s+",
+        "",
+        task,
+        flags=re.I
+    )
 
-        summary = clean[:250]
+    task = re.sub(
+        r"^[,:;\-\s]+",
+        "",
+        task
+    )
 
-    return summary[:500]
+    if task:
+        task = task[0].upper() + task[1:]
+
+    return task.strip()
 
 
 # =========================================================
 # OWNER DETECTION
 # =========================================================
 
+KNOWN_NAMES = {
+    "dharshan": "Dharshan",
+    "mubeen": "Mubeen",
+    "bala": "Bala",
+    "pugazhendhi": "Pugazhendhi",
+    "naveen": "Naveen",
+    "arun": "Arun",
+    "kumar": "Kumar",
+    "priya": "Priya",
+    "kamali": "Kamali",
+    "kamali": "Kamali"
+}
+
+
 def detect_owner(sentence):
 
-    text = sentence.strip()
+    text = clean_text(sentence)
 
     # -----------------------------------------------------
-    # First person
+    # Explicit self assignment
     # -----------------------------------------------------
 
     if re.search(
-        r"\b(I|I'll|I will|I can|I am going to|I'm going to)\b",
+        r"\bI\s+(?:will|shall|can|am going to)\b",
         text,
-        re.IGNORECASE
+        flags=re.I
     ):
-
         return "Self"
 
     # -----------------------------------------------------
-    # Team
+    # Explicit team assignment
     # -----------------------------------------------------
 
     if re.search(
-        r"^(we|we'll|we will|we can|the team)\b",
+        r"\b(?:we|our team|the team)\s+"
+        r"(?:will|shall|can|are going to)\b",
         text,
-        re.IGNORECASE
+        flags=re.I
     ):
-
         return "Team"
 
     # -----------------------------------------------------
-    # Name + will / shall / can
+    # Known person names
+    # -----------------------------------------------------
+
+    for name_key, display_name in KNOWN_NAMES.items():
+
+        pattern = (
+            r"\b"
+            + re.escape(name_key)
+            + r"\b\s+"
+            r"(?:will|shall|can|is going to|has to|needs to|must)"
+        )
+
+        if re.search(pattern, text, flags=re.I):
+            return display_name
+
+    # -----------------------------------------------------
+    # Generic named person
     # -----------------------------------------------------
 
     match = re.search(
-        r"\b([A-Za-z][A-Za-z]+)\s+(?:will|shall|can)\b",
-        text,
-        re.IGNORECASE
+        r"\b([A-Z][a-z]{2,})\s+"
+        r"(?:will|shall|can|is going to|has to|needs to|must)\b",
+        text
     )
 
     if match:
-
-        name = match.group(1)
-
-        if name.lower() not in {
-            "i",
-            "we",
-            "the"
-        }:
-
-            return name.title()
+        return match.group(1)
 
     # -----------------------------------------------------
-    # Explicit assignment
+    # Assigned to / responsible for
     # -----------------------------------------------------
 
     match = re.search(
-        r"\b(?:assigned to|assign to|responsible for|handled by|owner is)\s+([A-Za-z][A-Za-z]+)",
+        r"(?:assigned to|responsible for)\s+"
+        r"([A-Z][a-z]{2,})",
         text,
-        re.IGNORECASE
+        flags=re.I
     )
 
     if match:
-
         return match.group(1).title()
-
-    # -----------------------------------------------------
-    # Known team members
-    # -----------------------------------------------------
-
-    names = [
-        "Dharshan",
-        "Mubeen",
-        "Bala",
-        "Pugazhendhi",
-        "Naveen",
-        "Arun",
-        "Kumar",
-        "Priya",
-        "Kamali"
-    ]
-
-    for name in names:
-
-        if re.search(
-            rf"\b{name}\b",
-            text,
-            re.IGNORECASE
-        ):
-
-            return name.title()
 
     return "Unassigned"
 
@@ -311,124 +378,125 @@ def detect_owner(sentence):
 # DEADLINE DETECTION
 # =========================================================
 
+WEEKDAYS = {
+    "monday": "Monday",
+    "tuesday": "Tuesday",
+    "wednesday": "Wednesday",
+    "thursday": "Thursday",
+    "friday": "Friday",
+    "saturday": "Saturday",
+    "sunday": "Sunday"
+}
+
+
 def detect_deadline(sentence):
 
-    text = sentence.lower().strip()
+    text = clean_text(sentence)
 
-    # -----------------------------------------------------
-    # Relative deadlines
-    # -----------------------------------------------------
-
-    if re.search(r"\btoday\b", text):
-
+    # Today
+    if re.search(r"\btoday\b", text, re.I):
         return "Today"
 
-    if re.search(r"\btomorrow\b", text):
-
+    # Tomorrow
+    if re.search(r"\btomorrow\b", text, re.I):
         return "Tomorrow"
 
-    if re.search(r"\btonight\b", text):
-
+    # Tonight
+    if re.search(r"\btonight\b", text, re.I):
         return "Tonight"
 
-    if re.search(r"\bthis week\b", text):
+    # This week
+    if re.search(r"\bthis week\b", text, re.I):
+        return "This week"
 
-        return "This Week"
+    # Next week
+    if re.search(r"\bnext week\b", text, re.I):
+        return "Next week"
 
-    if re.search(r"\bnext week\b", text):
-
-        return "Next Week"
-
-    # -----------------------------------------------------
-    # Weekdays
-    # -----------------------------------------------------
-
-    weekdays = [
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday"
-    ]
-
-    for day in weekdays:
-
-        # by Friday
-        if re.search(
-            rf"\b(?:by|before|on)\s+{day}\b",
-            text
-        ):
-
-            return day.title()
-
-        # Friday
-        if re.search(
-            rf"\b{day}\b",
-            text
-        ):
-
-            return day.title()
-
-    # -----------------------------------------------------
-    # Months
-    # -----------------------------------------------------
-
-    months = {
-        "january": "January",
-        "february": "February",
-        "march": "March",
-        "april": "April",
-        "may": "May",
-        "june": "June",
-        "july": "July",
-        "august": "August",
-        "september": "September",
-        "october": "October",
-        "november": "November",
-        "december": "December"
-    }
-
-    for month_key, month_name in months.items():
-
-        # October 10
-        match = re.search(
-            rf"\b{month_key}\s+(\d{{1,2}})\b",
-            text
-        )
-
-        if match:
-
-            return f"{month_name} {match.group(1)}"
-
-        # 10 October
-        match = re.search(
-            rf"\b(\d{{1,2}})\s+{month_key}\b",
-            text
-        )
-
-        if match:
-
-            return f"{month_name} {match.group(1)}"
-
-    # -----------------------------------------------------
-    # Numeric dates
-    # -----------------------------------------------------
+    # Weekday
+    weekday_pattern = (
+        r"\b(?:by|before|on)?\s*"
+        r"(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
+    )
 
     match = re.search(
-        r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b",
-        text
+        weekday_pattern,
+        text,
+        flags=re.I
+    )
+
+    if match:
+        return WEEKDAYS[match.group(1).lower()]
+
+    # Month + date
+    month_pattern = (
+        r"\b("
+        r"january|february|march|april|may|june|"
+        r"july|august|september|october|november|december"
+        r")\s+"
+        r"(\d{1,2})"
+        r"(?:st|nd|rd|th)?"
+        r"(?:\s*,?\s*(\d{4}))?\b"
+    )
+
+    match = re.search(
+        month_pattern,
+        text,
+        flags=re.I
+    )
+
+    if match:
+
+        month = match.group(1).title()
+        day = match.group(2)
+        year = match.group(3)
+
+        if year:
+            return f"{month} {day}, {year}"
+
+        return f"{month} {day}"
+
+    # Date + month
+    reverse_month_pattern = (
+        r"\b(\d{1,2})\s+"
+        r"(january|february|march|april|may|june|"
+        r"july|august|september|october|november|december)"
+        r"(?:\s*,?\s*(\d{4}))?\b"
+    )
+
+    match = re.search(
+        reverse_month_pattern,
+        text,
+        flags=re.I
     )
 
     if match:
 
         day = match.group(1)
-        month = match.group(2)
+        month = match.group(2).title()
         year = match.group(3)
 
         if year:
+            return f"{month} {day}, {year}"
 
+        return f"{month} {day}"
+
+    # Numeric date
+    numeric_date = re.search(
+        r"\b(?:by|before|on)?\s*"
+        r"(\d{1,2})[/-](\d{1,2})"
+        r"(?:[/-](\d{2,4}))?\b",
+        text,
+        flags=re.I
+    )
+
+    if numeric_date:
+
+        day = numeric_date.group(1)
+        month = numeric_date.group(2)
+        year = numeric_date.group(3)
+
+        if year:
             return f"{day}/{month}/{year}"
 
         return f"{day}/{month}"
@@ -437,20 +505,20 @@ def detect_deadline(sentence):
 
 
 # =========================================================
-# PRIORITY DETECTION
+# PRIORITY
 # =========================================================
 
 def detect_priority(sentence):
 
-    text = sentence.lower()
+    text = clean_text(sentence).lower()
 
     high_words = [
         "urgent",
-        "important",
         "critical",
         "asap",
         "immediately",
-        "high priority"
+        "high priority",
+        "important"
     ]
 
     medium_words = [
@@ -459,356 +527,287 @@ def detect_priority(sentence):
         "soon"
     ]
 
-    for word in high_words:
+    if any(word in text for word in high_words):
+        return "High"
 
-        if word in text:
-
-            return "High"
-
-    for word in medium_words:
-
-        if word in text:
-
-            return "Medium"
+    if any(word in text for word in medium_words):
+        return "Medium"
 
     return "Low"
 
 
 # =========================================================
-# TASK NORMALIZATION
+# TASK FILTERING
 # =========================================================
 
-def normalize_task(sentence):
+IGNORE_PHRASES = [
+    "let's make this project successful",
+    "lets make this project successful",
+    "let's make this project",
+    "lets make this project",
+    "let's start working",
+    "lets start working",
+    "great work",
+    "great job",
+    "good work",
+    "good job",
+    "nice work",
+    "well done",
+    "we'll make sure everyone stays informed",
+    "we will make sure everyone stays informed",
+    "everyone stays informed",
+    "good teamwork depends",
+    "teamwork depends",
+    "clear communication",
+    "communication is",
+    "work together",
+    "finish them on time",
+    "successful project",
+    "first, we need to divide the tasks",
+    "first we need to divide the tasks",
+    "we need to divide the tasks among the team"
+]
 
-    task = sentence.strip()
+
+def is_ignored_sentence(sentence):
+
+    text = clean_text(sentence).lower()
+
+    for phrase in IGNORE_PHRASES:
+
+        if phrase in text:
+            return True
+
+    # Questions are generally discussion, not action items.
+    if text.endswith("?"):
+        return True
+
+    # Very short motivational statements.
+    if len(text.split()) <= 4:
+        short_ignore = [
+            "great work everyone",
+            "great work",
+            "good job",
+            "good teamwork",
+            "nice work",
+            "well done"
+        ]
+
+        if text in short_ignore:
+            return True
+
+    return False
+
+
+def is_real_task(sentence):
+
+    text = clean_text(sentence)
+
+    if not text:
+        return False
+
+    if is_ignored_sentence(text):
+        return False
+
+    lower = text.lower()
 
     # -----------------------------------------------------
-    # First person
+    # Explicit assignment patterns
     # -----------------------------------------------------
 
-    task = re.sub(
-        r"^(I'll|I will|I can|I’m going to|I'm going to)\s+",
-        "",
-        task,
-        flags=re.IGNORECASE
-    )
+    if re.search(
+        r"\b[A-Za-z][A-Za-z0-9_-]*\s+"
+        r"(?:will|shall|can|is going to|has to|needs to|must)\b",
+        text,
+        re.I
+    ):
+        return True
 
     # -----------------------------------------------------
-    # Team
+    # First person action
     # -----------------------------------------------------
 
-    task = re.sub(
-        r"^(we will|we can|we should|the team will)\s+",
-        "",
-        task,
-        flags=re.IGNORECASE
-    )
+    if re.search(
+        r"\b(?:I|we|our team)\s+"
+        r"(?:will|shall|can|need to|have to|must|"
+        r"am going to|are going to)\b",
+        text,
+        re.I
+    ):
+        return True
 
     # -----------------------------------------------------
-    # Person + will/can/shall
+    # Task verbs
     # -----------------------------------------------------
 
-    task = re.sub(
-        r"^[A-Za-z][A-Za-z]+\s+(will|can|shall)\s+",
-        "",
-        task,
-        flags=re.IGNORECASE
-    )
+    action_verbs = [
+        "prepare",
+        "complete",
+        "finish",
+        "create",
+        "design",
+        "develop",
+        "test",
+        "check",
+        "review",
+        "submit",
+        "collect",
+        "organize",
+        "update",
+        "fix",
+        "build",
+        "implement",
+        "research",
+        "present",
+        "record",
+        "upload",
+        "deploy",
+        "write",
+        "edit",
+        "install",
+        "configure"
+    ]
+
+    for verb in action_verbs:
+
+        if re.search(
+            r"\b" + re.escape(verb) + r"\b",
+            lower
+        ):
+            return True
 
     # -----------------------------------------------------
-    # Need / must
+    # Explicit obligation
     # -----------------------------------------------------
 
-    task = re.sub(
-        r"^(need to|needs to|has to|have to|must)\s+",
-        "",
-        task,
-        flags=re.IGNORECASE
-    )
+    if re.search(
+        r"\b(?:need to|needs to|has to|have to|must|"
+        r"responsible for|assigned to)\b",
+        lower
+    ):
+        return True
 
-    task = task.strip()
-
-    if task:
-
-        task = (
-            task[0].upper()
-            + task[1:]
-        )
-
-    return task
+    return False
 
 
 # =========================================================
 # TASK EXTRACTION
 # =========================================================
 
-def extract_tasks(transcript):
+def split_sentences(transcript):
 
-    if not transcript:
+    text = clean_text(transcript)
 
+    if not text:
         return []
 
-    sentences = re.split(
-        r"(?<=[.!?])\s+|\n+",
-        transcript
+    # Convert common transcript separators.
+    text = re.sub(
+        r"\s+(?=(?:I|We|They|The team|[A-Z][a-z]+)\s+"
+        r"(?:will|shall|can|must|needs to|has to)\b)",
+        ". ",
+        text
     )
 
-    tasks = []
+    parts = re.split(
+        r"(?<=[.!?])\s+|[\r\n]+",
+        text
+    )
 
+    return [
+        clean_text(part)
+        for part in parts
+        if clean_text(part)
+    ]
+
+
+def extract_tasks(transcript):
+
+    sentences = split_sentences(transcript)
+
+    tasks = []
     seen = set()
 
     for sentence in sentences:
 
-        sentence = sentence.strip()
-
-        if not sentence:
-
+        if not is_real_task(sentence):
             continue
 
-        clean = re.sub(
-            r"\s+",
-            " ",
-            sentence
-        ).strip()
+        # Remove trailing punctuation.
+        sentence = sentence.strip(" .,!;:")
 
-        lower = clean.lower()
+        owner = detect_owner(sentence)
+        deadline = detect_deadline(sentence)
+        priority = detect_priority(sentence)
 
-        # -------------------------------------------------
-        # Ignore questions
-        # -------------------------------------------------
+        task_text = normalize_task(sentence)
 
-        if "?" in clean:
-
+        if not task_text:
             continue
 
-        if re.match(
-            r"^(what|when|where|who|why|how)\b",
-            lower
-        ):
-
+        # Don't save sentences that become too vague.
+        if len(task_text.split()) < 3:
             continue
 
-        # -------------------------------------------------
-        # Ignore motivational / general statements
-        # -------------------------------------------------
-
-        ignore_phrases = [
-
-            "great work",
-            "good work",
-            "great job",
-            "good job",
-
-            "good teamwork",
-            "teamwork depends",
-
-            "let's make this project successful",
-            "let's make this project",
-
-            "let's start working",
-
-            "we'll make sure",
-            "we will make sure",
-
-            "everyone stays informed",
-            "stays informed",
-
-            "clear communication",
-            "communication is",
-
-            "work together",
-            "finish them on time",
-
-            "successful project",
-            "nice work",
-            "well done"
-        ]
-
-        if any(
-            phrase in lower
-            for phrase in ignore_phrases
-        ):
-
-            continue
-
-        # -------------------------------------------------
-        # Action keywords
-        # -------------------------------------------------
-
-        action_patterns = [
-
-            r"\bwill\b",
-            r"\bshall\b",
-            r"\bneed to\b",
-            r"\bneeds to\b",
-            r"\bhas to\b",
-            r"\bhave to\b",
-            r"\bmust\b",
-
-            r"\bassigned to\b",
-            r"\bresponsible for\b",
-
-            r"\bprepare\b",
-            r"\bcomplete\b",
-            r"\bfinish\b",
-            r"\bcreate\b",
-            r"\bdesign\b",
-            r"\bdevelop\b",
-            r"\btest\b",
-            r"\bcheck\b",
-            r"\breview\b",
-            r"\bsubmit\b",
-            r"\bcollect\b",
-            r"\borganize\b",
-            r"\bupdate\b",
-            r"\bfix\b",
-            r"\bbuild\b",
-            r"\bimplement\b",
-            r"\bresearch\b",
-            r"\bpresent\b",
-            r"\brecord\b",
-            r"\bupload\b",
-            r"\bdeploy\b"
-        ]
-
-        is_action = any(
-            re.search(
-                pattern,
-                lower
-            )
-            for pattern in action_patterns
-        )
-
-        if not is_action:
-
-            continue
-
-        # -------------------------------------------------
-        # Reject vague discussion
-        # -------------------------------------------------
-
-        vague_patterns = [
-
-            "should be",
-            "will be important",
-            "communication will",
-
-            "we should share",
-            "we should also update",
-
-            "that gives us",
-
-            "i think",
-            "maybe we",
-            "perhaps we",
-
-            "we can discuss",
-            "we can work together"
-        ]
-
-        if any(
-            phrase in lower
-            for phrase in vague_patterns
-        ):
-
-            continue
-
-        # -------------------------------------------------
-        # Normalize
-        # -------------------------------------------------
-
-        task = normalize_task(
-            clean
-        )
-
-        if not task:
-
-            continue
-
-        # -------------------------------------------------
-        # Remove punctuation
-        # -------------------------------------------------
-
-        task = task.rstrip(
-            ".,;:!? "
-        )
-
-        # -------------------------------------------------
-        # Minimum useful length
-        # -------------------------------------------------
-
-        if len(task.split()) < 3:
-
-            continue
-
-        # -------------------------------------------------
-        # Deduplicate
-        # -------------------------------------------------
-
-        key = re.sub(
+        # Normalize duplicate comparison.
+        duplicate_key = re.sub(
             r"[^a-z0-9]+",
             " ",
-            task.lower()
+            task_text.lower()
         ).strip()
 
-        if key in seen:
-
+        if duplicate_key in seen:
             continue
 
-        seen.add(key)
-
-        # -------------------------------------------------
-        # Metadata
-        # -------------------------------------------------
-
-        owner = detect_owner(
-            clean
-        )
-
-        deadline = detect_deadline(
-            clean
-        )
-
-        priority = detect_priority(
-            clean
-        )
+        seen.add(duplicate_key)
 
         tasks.append({
-
-            "task": task,
-
+            "task": task_text,
             "owner": owner,
-
             "deadline": deadline,
-
             "priority": priority
-
         })
 
     return tasks
 
 
 # =========================================================
-# OLD TASK CLEANUP
+# REMOVE DUPLICATES FOR ONE MEETING
 # =========================================================
 
-def cleanup_old_tasks():
+def delete_meeting_tasks(meeting_id):
 
     conn = get_db()
 
-    rows = conn.execute(
-        """
-        SELECT id, task
+    conn.execute(
+        "DELETE FROM tasks WHERE meeting_id = ?",
+        (meeting_id,)
+    )
+
+    conn.commit()
+    conn.close()
+
+
+# =========================================================
+# OLD GLOBAL DUPLICATE CLEANUP
+# =========================================================
+
+def cleanup_duplicate_tasks():
+
+    conn = get_db()
+
+    rows = conn.execute("""
+        SELECT id, meeting_id, task, created_at
         FROM tasks
-        ORDER BY id
-        """
-    ).fetchall()
+        ORDER BY id ASC
+    """).fetchall()
 
     seen = set()
+    delete_ids = []
 
     for row in rows:
 
-        task = row["task"] or ""
+        task = clean_text(row["task"])
 
         key = re.sub(
             r"[^a-z0-9]+",
@@ -816,20 +815,64 @@ def cleanup_old_tasks():
             task.lower()
         ).strip()
 
-        if key in seen:
+        if not key:
+            delete_ids.append(row["id"])
+            continue
 
-            conn.execute(
-                "DELETE FROM tasks WHERE id = ?",
-                (row["id"],)
-            )
+        # Do NOT delete same task from different meetings.
+        # Historical meetings are allowed to contain
+        # similar tasks.
+        meeting_key = (
+            row["meeting_id"],
+            key
+        )
 
+        if meeting_key in seen:
+            delete_ids.append(row["id"])
         else:
+            seen.add(meeting_key)
 
-            seen.add(key)
+    if delete_ids:
+
+        conn.executemany(
+            "DELETE FROM tasks WHERE id = ?",
+            [(task_id,) for task_id in delete_ids]
+        )
 
     conn.commit()
-
     conn.close()
+
+
+# =========================================================
+# TRANSCRIPTION
+# =========================================================
+
+def transcribe_audio(audio_path):
+
+    model = get_whisper_model()
+
+    print("Transcription started...")
+
+    segments, info = model.transcribe(
+        audio_path,
+        beam_size=1,
+        vad_filter=True
+    )
+
+    text_parts = []
+
+    for segment in segments:
+
+        text = segment.text.strip()
+
+        if text:
+            text_parts.append(text)
+
+    transcript = " ".join(text_parts)
+
+    print("Transcription completed.")
+
+    return transcript
 
 
 # =========================================================
@@ -837,28 +880,15 @@ def cleanup_old_tasks():
 # =========================================================
 
 @app.route("/")
-def index():
-
-    conn = get_db()
-
-    meetings = conn.execute(
-        """
-        SELECT *
-        FROM meetings
-        ORDER BY id DESC
-        """
-    ).fetchall()
-
-    conn.close()
+def home():
 
     return render_template(
-        "index.html",
-        meetings=meetings
+        "index.html"
     )
 
 
 # =========================================================
-# UPLOAD AUDIO
+# AUDIO UPLOAD
 # =========================================================
 
 @app.route(
@@ -869,36 +899,27 @@ def upload_audio():
 
     if "audio" not in request.files:
 
-        return (
-            "No audio file selected.",
-            400
-        )
+        flash("Please select an audio file.")
+
+        return redirect(url_for("home"))
 
     file = request.files["audio"]
 
-    if file.filename == "":
+    if not file or not file.filename:
 
-        return (
-            "No audio file selected.",
-            400
+        flash("No audio file selected.")
+
+        return redirect(url_for("home"))
+
+    if not allowed_file(file.filename):
+
+        flash(
+            "Unsupported audio format."
         )
 
-    if not allowed_file(
-        file.filename
-    ):
+        return redirect(url_for("home"))
 
-        return (
-            "Unsupported file type.",
-            400
-        )
-
-    # -----------------------------------------------------
-    # Safe filename
-    # -----------------------------------------------------
-
-    safe_filename = re.sub(
-        r"[^A-Za-z0-9_.-]",
-        "_",
+    original_name = secure_filename(
         file.filename
     )
 
@@ -906,368 +927,232 @@ def upload_audio():
         "%Y%m%d_%H%M%S_%f"
     )
 
-    safe_filename = (
+    filename = (
         timestamp
         + "_"
-        + safe_filename
+        + original_name
     )
 
     filepath = os.path.join(
-        app.config["UPLOAD_FOLDER"],
-        safe_filename
+        UPLOAD_FOLDER,
+        filename
     )
 
-    # -----------------------------------------------------
-    # Save audio
-    # -----------------------------------------------------
+    file.save(filepath)
+
+    print(f"Audio saved: {filepath}")
 
     try:
 
-        file.save(
+        transcript = transcribe_audio(
             filepath
         )
-
-        print(
-            f"Audio saved: {filepath}"
-        )
-
-    except Exception as e:
-
-        print(
-            "File save error:",
-            e
-        )
-
-        return (
-            "Unable to save audio file.",
-            500
-        )
-
-    # -----------------------------------------------------
-    # Transcription
-    # -----------------------------------------------------
-
-    try:
-
-        print(
-            "Transcription started..."
-        )
-
-        whisper_model = get_whisper_model()
-
-        segments, info = whisper_model.transcribe(
-            filepath,
-            beam_size=1,
-            vad_filter=True
-        )
-
-        transcript_parts = []
-
-        for segment in segments:
-
-            text = segment.text.strip()
-
-            if text:
-
-                transcript_parts.append(
-                    text
-                )
-
-        transcript = " ".join(
-            transcript_parts
-        ).strip()
-
-        print(
-            "Transcription completed."
-        )
-
-        if not transcript:
-
-            transcript = (
-                "No speech was detected "
-                "in the uploaded audio."
-            )
 
     except Exception as e:
 
         print(
             "Transcription error:",
-            e
+            repr(e)
         )
 
-        return (
-            f"Transcription error: {str(e)}",
-            500
+        flash(
+            "Audio transcription failed."
         )
 
-    finally:
-
-        try:
-
-            if os.path.exists(
-                filepath
-            ):
-
-                os.remove(
-                    filepath
-                )
-
-        except Exception as e:
-
-            print(
-                "Temporary file cleanup error:",
-                e
-            )
-
-    # -----------------------------------------------------
-    # Save meeting
-    # -----------------------------------------------------
-
-    try:
-
-        conn = get_db()
-
-        cursor = conn.execute(
-            """
-            INSERT INTO meetings
-            (
-                title,
-                participants,
-                transcript,
-                summary,
-                created_at
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                "Meeting",
-                "Not specified",
-                transcript,
-                generate_summary(
-                    transcript
-                ),
-                datetime.now().strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
-            )
+        return redirect(
+            url_for("home")
         )
 
-        meeting_id = cursor.lastrowid
-
-        conn.commit()
-
-        conn.close()
-
-    except Exception as e:
-
-        print(
-            "Database error:",
-            e
-        )
-
-        return (
-            "Unable to save meeting.",
-            500
-        )
-
-    # -----------------------------------------------------
-    # Open meeting page
-    # -----------------------------------------------------
-
-    return redirect(
-        f"/meeting/{meeting_id}"
+    summary = generate_summary(
+        transcript
     )
-
-
-# =========================================================
-# MEETING NOTES
-# =========================================================
-
-@app.route(
-    "/meeting",
-    methods=["GET", "POST"]
-)
-def meeting():
-
-    if request.method == "GET":
-
-        return redirect("/")
-
-    notes = request.form.get(
-        "notes",
-        ""
-    ).strip()
-
-    if not notes:
-
-        return (
-            "Meeting notes cannot be empty.",
-            400
-        )
 
     conn = get_db()
 
-    cursor = conn.execute(
-        """
+    cursor = conn.execute("""
         INSERT INTO meetings
-        (
-            title,
-            participants,
-            transcript,
-            summary,
-            created_at
-        )
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (
-            "Meeting Notes",
-            "Not specified",
-            notes,
-            generate_summary(
-                notes
-            ),
-            datetime.now().strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-        )
-    )
+        (title, transcript, summary, created_at)
+        VALUES (?, ?, ?, ?)
+    """, (
+        "Audio Meeting",
+        transcript,
+        summary,
+        datetime.now().isoformat()
+    ))
 
     meeting_id = cursor.lastrowid
 
     conn.commit()
-
     conn.close()
 
     return redirect(
-        f"/meeting/{meeting_id}"
+        url_for(
+            "meeting_page",
+            meeting_id=meeting_id
+        )
     )
 
 
 # =========================================================
-# MEETING DETAIL
+# NOTES MEETING
+# =========================================================
+
+@app.route(
+    "/meeting",
+    methods=["POST"]
+)
+def create_meeting():
+
+    transcript = request.form.get(
+        "notes",
+        ""
+    ).strip()
+
+    title = request.form.get(
+        "title",
+        "Meeting"
+    ).strip()
+
+    if not transcript:
+
+        flash(
+            "Please enter meeting notes."
+        )
+
+        return redirect(
+            url_for("home")
+        )
+
+    if not title:
+        title = "Meeting"
+
+    summary = generate_summary(
+        transcript
+    )
+
+    conn = get_db()
+
+    cursor = conn.execute("""
+        INSERT INTO meetings
+        (title, transcript, summary, created_at)
+        VALUES (?, ?, ?, ?)
+    """, (
+        title,
+        transcript,
+        summary,
+        datetime.now().isoformat()
+    ))
+
+    meeting_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+
+    return redirect(
+        url_for(
+            "meeting_page",
+            meeting_id=meeting_id
+        )
+    )
+
+
+# =========================================================
+# MEETING PAGE
 # =========================================================
 
 @app.route(
     "/meeting/<int:meeting_id>"
 )
-def meeting_detail(
-    meeting_id
-):
+def meeting_page(meeting_id):
 
     conn = get_db()
 
-    meeting_row = conn.execute(
-        """
+    meeting = conn.execute("""
         SELECT *
         FROM meetings
         WHERE id = ?
-        """,
-        (meeting_id,)
-    ).fetchone()
-
-    if not meeting_row:
-
-        conn.close()
-
-        return (
-            "Meeting not found.",
-            404
-        )
-
-    tasks = conn.execute(
-        """
-        SELECT *
-        FROM tasks
-        WHERE meeting_id = ?
-        ORDER BY id DESC
-        """,
-        (meeting_id,)
-    ).fetchall()
+    """, (
+        meeting_id,
+    )).fetchone()
 
     conn.close()
 
+    if not meeting:
+
+        return "Meeting not found", 404
+
     return render_template(
         "transcription.html",
-        meeting=meeting_row,
-        tasks=tasks
+        meeting=meeting
     )
 
 
 # =========================================================
-# ANALYZE MEETING
+# ANALYZE
 # =========================================================
 
 @app.route(
     "/analyze",
-    methods=["GET", "POST"]
+    methods=["POST"]
 )
 def analyze():
 
-    meeting_id = request.values.get(
-        "meeting_id",
-        type=int
+    meeting_id = request.form.get(
+        "meeting_id"
     )
 
     if not meeting_id:
 
-        return (
-            "Meeting ID missing.",
-            400
+        return redirect(
+            url_for("home")
+        )
+
+    try:
+        meeting_id = int(meeting_id)
+    except ValueError:
+
+        return redirect(
+            url_for("home")
         )
 
     conn = get_db()
 
-    meeting_row = conn.execute(
-        """
+    meeting = conn.execute("""
         SELECT *
         FROM meetings
         WHERE id = ?
-        """,
-        (meeting_id,)
-    ).fetchone()
+    """, (
+        meeting_id,
+    )).fetchone()
 
-    if not meeting_row:
+    conn.close()
 
-        conn.close()
+    if not meeting:
 
-        return (
-            "Meeting not found.",
-            404
-        )
+        return "Meeting not found", 404
 
-    transcript = (
-        meeting_row["transcript"]
-        or ""
-    ).strip()
-
-    # -----------------------------------------------------
-    # Extract tasks
-    # -----------------------------------------------------
+    transcript = meeting["transcript"] or ""
 
     tasks = extract_tasks(
         transcript
     )
 
     # -----------------------------------------------------
-    # Delete old analysis
+    # IMPORTANT:
+    # Delete ONLY this meeting's old tasks.
     # -----------------------------------------------------
 
-    conn.execute(
-        """
-        DELETE FROM tasks
-        WHERE meeting_id = ?
-        """,
-        (meeting_id,)
+    delete_meeting_tasks(
+        meeting_id
     )
 
-    # -----------------------------------------------------
-    # Insert fresh tasks
-    # -----------------------------------------------------
+    conn = get_db()
+
+    now = datetime.now().isoformat()
 
     for item in tasks:
 
-        conn.execute(
-            """
+        conn.execute("""
             INSERT INTO tasks
             (
                 meeting_id,
@@ -1275,42 +1160,34 @@ def analyze():
                 owner,
                 deadline,
                 priority,
-                status
+                status,
+                created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                meeting_id,
-                item["task"],
-                item["owner"],
-                item["deadline"],
-                item["priority"],
-                "Pending"
-            )
-        )
-
-    # -----------------------------------------------------
-    # Update summary
-    # -----------------------------------------------------
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            meeting_id,
+            item["task"],
+            item["owner"],
+            item["deadline"],
+            item["priority"],
+            "Pending",
+            now
+        ))
 
     summary = generate_summary(
         transcript
     )
 
-    conn.execute(
-        """
+    conn.execute("""
         UPDATE meetings
         SET summary = ?
         WHERE id = ?
-        """,
-        (
-            summary,
-            meeting_id
-        )
-    )
+    """, (
+        summary,
+        meeting_id
+    ))
 
     conn.commit()
-
     conn.close()
 
     print(
@@ -1321,13 +1198,16 @@ def analyze():
         f"Tasks detected: {len(tasks)}"
     )
 
-    # =====================================================
+    # -----------------------------------------------------
     # IMPORTANT:
-    # After analysis go to Dashboard.
-    # =====================================================
+    # Dashboard will show latest meeting only.
+    # -----------------------------------------------------
 
     return redirect(
-        "/dashboard"
+        url_for(
+            "dashboard",
+            meeting_id=meeting_id
+        )
     )
 
 
@@ -1338,28 +1218,111 @@ def analyze():
 @app.route("/dashboard")
 def dashboard():
 
+    requested_meeting_id = request.args.get(
+        "meeting_id"
+    )
+
     conn = get_db()
 
-    tasks = conn.execute(
-        """
-        SELECT
-            id,
+    # -----------------------------------------------------
+    # If meeting_id is supplied, show that meeting.
+    # Otherwise show latest meeting.
+    # -----------------------------------------------------
+
+    if requested_meeting_id:
+
+        try:
+            meeting_id = int(
+                requested_meeting_id
+            )
+        except ValueError:
+            meeting_id = None
+
+    else:
+        meeting_id = None
+
+    if meeting_id is None:
+
+        latest_meeting = conn.execute("""
+            SELECT id
+            FROM meetings
+            ORDER BY id DESC
+            LIMIT 1
+        """).fetchone()
+
+        if latest_meeting:
+            meeting_id = latest_meeting["id"]
+
+    # -----------------------------------------------------
+    # ONLY latest selected meeting tasks
+    # -----------------------------------------------------
+
+    if meeting_id:
+
+        tasks = conn.execute("""
+            SELECT *
+            FROM tasks
+            WHERE meeting_id = ?
+            ORDER BY id ASC
+        """, (
             meeting_id,
-            task,
-            owner,
-            deadline,
-            priority,
-            status
-        FROM tasks
-        ORDER BY id DESC
-        """
-    ).fetchall()
+        )).fetchall()
+
+    else:
+
+        tasks = []
+
+    # -----------------------------------------------------
+    # Current meeting
+    # -----------------------------------------------------
+
+    meeting = None
+
+    if meeting_id:
+
+        meeting = conn.execute("""
+            SELECT *
+            FROM meetings
+            WHERE id = ?
+        """, (
+            meeting_id,
+        )).fetchone()
+
+    # -----------------------------------------------------
+    # Dashboard counts
+    # -----------------------------------------------------
+
+    total_tasks = len(tasks)
+
+    pending_tasks = sum(
+        1
+        for task in tasks
+        if (task["status"] or "Pending").lower()
+        == "pending"
+    )
+
+    completed_tasks = sum(
+        1
+        for task in tasks
+        if (task["status"] or "").lower()
+        == "completed"
+    )
+
+    # Overdue calculation remains simple.
+    # Deadline text such as Friday/Tomorrow is
+    # displayed but not falsely marked overdue.
+    overdue_tasks = 0
 
     conn.close()
 
     return render_template(
         "dashboard.html",
-        tasks=tasks
+        tasks=tasks,
+        meeting=meeting,
+        total_tasks=total_tasks,
+        pending_tasks=pending_tasks,
+        completed_tasks=completed_tasks,
+        overdue_tasks=overdue_tasks
     )
 
 
@@ -1379,29 +1342,25 @@ def update_owner(task_id):
     ).strip()
 
     if not owner:
-
         owner = "Unassigned"
 
     conn = get_db()
 
-    conn.execute(
-        """
+    conn.execute("""
         UPDATE tasks
         SET owner = ?
         WHERE id = ?
-        """,
-        (
-            owner,
-            task_id
-        )
-    )
+    """, (
+        owner,
+        task_id
+    ))
 
     conn.commit()
-
     conn.close()
 
     return redirect(
-        "/dashboard"
+        request.referrer
+        or url_for("dashboard")
     )
 
 
@@ -1411,54 +1370,50 @@ def update_owner(task_id):
 
 @app.route(
     "/complete/<int:task_id>",
-    methods=["GET", "POST"]
+    methods=["POST"]
 )
 def complete_task(task_id):
 
     conn = get_db()
 
-    row = conn.execute(
-        """
+    task = conn.execute("""
         SELECT status
         FROM tasks
         WHERE id = ?
-        """,
-        (task_id,)
-    ).fetchone()
+    """, (
+        task_id,
+    )).fetchone()
 
-    if row:
+    if task:
 
         current_status = (
-            row["status"]
+            task["status"]
             or "Pending"
         )
 
-        if current_status == "Completed":
+        new_status = (
+            "Completed"
+            if current_status.lower()
+            != "completed"
+            else "Pending"
+        )
 
-            new_status = "Pending"
-
-        else:
-
-            new_status = "Completed"
-
-        conn.execute(
-            """
+        conn.execute("""
             UPDATE tasks
             SET status = ?
             WHERE id = ?
-            """,
-            (
-                new_status,
-                task_id
-            )
-        )
+        """, (
+            new_status,
+            task_id
+        ))
 
-    conn.commit()
+        conn.commit()
 
     conn.close()
 
     return redirect(
-        "/dashboard"
+        request.referrer
+        or url_for("dashboard")
     )
 
 
@@ -1471,13 +1426,16 @@ def history():
 
     conn = get_db()
 
-    meetings = conn.execute(
-        """
-        SELECT *
-        FROM meetings
-        ORDER BY id DESC
-        """
-    ).fetchall()
+    meetings = conn.execute("""
+        SELECT
+            m.*,
+            COUNT(t.id) AS task_count
+        FROM meetings m
+        LEFT JOIN tasks t
+            ON m.id = t.meeting_id
+        GROUP BY m.id
+        ORDER BY m.id DESC
+    """).fetchall()
 
     conn.close()
 
@@ -1496,15 +1454,12 @@ def notifications():
 
     conn = get_db()
 
-    tasks = conn.execute(
-        """
+    tasks = conn.execute("""
         SELECT *
         FROM tasks
         WHERE status != 'Completed'
-        AND deadline != 'Not specified'
         ORDER BY id DESC
-        """
-    ).fetchall()
+    """).fetchall()
 
     conn.close()
 
@@ -1523,19 +1478,17 @@ def problems():
 
     conn = get_db()
 
-    problems_list = conn.execute(
-        """
+    problems = conn.execute("""
         SELECT *
         FROM problems
         ORDER BY id DESC
-        """
-    ).fetchall()
+    """).fetchall()
 
     conn.close()
 
     return render_template(
         "problems.html",
-        problems=problems_list
+        problems=problems
     )
 
 
@@ -1546,10 +1499,10 @@ def problems():
 @app.route("/health")
 def health():
 
-    return jsonify({
+    return {
         "status": "ok",
         "service": "Meet2ActionAI"
-    })
+    }
 
 
 # =========================================================
@@ -1557,16 +1510,16 @@ def health():
 # =========================================================
 
 @app.errorhandler(413)
-def too_large(e):
+def file_too_large(error):
 
     return (
-        "File too large. Maximum size is 25 MB.",
+        "Uploaded file is too large.",
         413
     )
 
 
 @app.errorhandler(404)
-def not_found(e):
+def page_not_found(error):
 
     return (
         "Page not found.",
@@ -1580,23 +1533,20 @@ def not_found(e):
 
 init_db()
 
-cleanup_old_tasks()
+cleanup_duplicate_tasks()
 
 
 # =========================================================
-# RUN SERVER
+# RUN
 # =========================================================
 
 if __name__ == "__main__":
 
-    print("")
+    print()
     print("======================================")
     print("      Meet2ActionAI is starting")
     print("======================================")
-    print("")
-
-    # Render provides PORT automatically.
-    # Local development uses 5000.
+    print()
 
     port = int(
         os.environ.get(
