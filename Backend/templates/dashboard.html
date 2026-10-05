@@ -85,6 +85,7 @@
 
         .task h3 {
             margin: 0 0 10px;
+            font-size: 18px;
         }
 
         .info {
@@ -157,157 +158,169 @@
                 padding: 15px 20px;
             }
         }
+
+        @media (max-width: 500px) {
+            .stats {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 
 <body>
 
-    <div class="navbar">
+<div class="navbar">
 
-        <div class="logo">
-            Meet2Action
+    <div class="logo">
+        Meet2Action
+    </div>
+
+    <div>
+        <a href="/">Home</a>
+        <a href="/history">History</a>
+        <a href="/notifications">🔔</a>
+    </div>
+
+</div>
+
+
+<div class="container">
+
+    <h1>📊 Accountability Dashboard</h1>
+
+
+    <!-- STATISTICS -->
+
+    <div class="stats">
+
+        <div class="stat">
+            <p>Total Tasks</p>
+            <h2>{{ total_tasks }}</h2>
         </div>
 
-        <div>
-            <a href="/">Home</a>
-            <a href="/history">History</a>
-            <a href="/notifications">🔔</a>
+        <div class="stat">
+            <p>Pending</p>
+            <h2>{{ pending_tasks }}</h2>
+        </div>
+
+        <div class="stat">
+            <p>Completed</p>
+            <h2>{{ completed_tasks }}</h2>
+        </div>
+
+        <div class="stat">
+            <p>Overdue</p>
+            <h2>{{ overdue_tasks }}</h2>
         </div>
 
     </div>
 
 
-    <div class="container">
+    <!-- ACTION ITEMS -->
 
-        <h1>📊 Accountability Dashboard</h1>
+    <div class="section">
 
+        <h2>Action Items</h2>
 
-        <!-- STATISTICS -->
+        {% if tasks %}
 
-        <div class="stats">
+            {% for task in tasks %}
 
-            <div class="stat">
-                <p>Total Tasks</p>
-                <h2>{{ total_tasks }}</h2>
-            </div>
+                <div class="task">
 
-            <div class="stat">
-                <p>Pending</p>
-                <h2>{{ pending_tasks }}</h2>
-            </div>
+                    <!-- IMPORTANT:
+                         SQLite Row is:
+                         0=id
+                         1=meeting_id
+                         2=task
+                         3=owner
+                         4=deadline
+                         5=priority
+                         6=status
+                    -->
 
-            <div class="stat">
-                <p>Completed</p>
-                <h2>{{ completed_tasks }}</h2>
-            </div>
+                    <h3>
+                        {{ task["task"] }}
+                    </h3>
 
-            <div class="stat">
-                <p>Overdue</p>
-                <h2>{{ overdue_tasks }}</h2>
-            </div>
-
-        </div>
-
-
-        <!-- TASK LIST -->
-
-        <div class="section">
-
-            <h2>Action Items</h2>
-
-            {% if tasks %}
-
-                {% for task in tasks %}
-
-                    <div class="task">
-
-                        <h3>
-                            {{ task[1] }}
-                        </h3>
-
-                        <p class="info">
-                            👤 <strong>Owner:</strong>
-                            {{ task[2] }}
-                        </p>
-
-                        <p class="info">
-                            📅 <strong>Deadline:</strong>
-                            {{ task[3] }}
-                        </p>
-
-
-                        <!-- PRIORITY -->
-
-                        <span class="priority
-                            {% if task[4] == 'High' %}
-                                high
-                            {% elif task[4] == 'Medium' %}
-                                medium
-                            {% else %}
-                                low
-                            {% endif %}
-                        ">
-                            Priority: {{ task[4] }}
-                        </span>
-
-
-                        <!-- STATUS -->
-
-                        <span class="status
-                            {% if task[5] == 'Completed' %}
-                                completed
-                            {% elif task[5] == 'Overdue' %}
-                                overdue
-                            {% else %}
-                                pending
-                            {% endif %}
-                        ">
-                            {{ task[5] }}
-                        </span>
-
-
-                        <!-- COMPLETE BUTTON -->
-
-                        {% if task[5] != 'Completed' %}
-
-                            <br>
-
-                            <a
-                                class="complete-btn"
-                                href="/complete/{{ task[0] }}"
-                            >
-                                ✓ Mark as Completed
-                            </a>
-
-                        {% endif %}
-
-                    </div>
-
-                {% endfor %}
-
-            {% else %}
-
-                <div class="empty">
-                    <h3>🎯 No action items yet</h3>
-
-                    <p>
-                        Upload a meeting recording or enter
-                        meeting notes to create action items.
+                    <p class="info">
+                        👤 <strong>Owner:</strong>
+                        {{ task["owner"] }}
                     </p>
 
-                    <a
-                        class="complete-btn"
-                        href="/upload_audio"
-                    >
-                        🎙️ Upload Meeting
-                    </a>
+                    <p class="info">
+                        📅 <strong>Deadline:</strong>
+                        {{ task["deadline"] }}
+                    </p>
+
+                    <span class="priority
+                        {% if task['priority'] == 'High' %}
+                            high
+                        {% elif task['priority'] == 'Medium' %}
+                            medium
+                        {% else %}
+                            low
+                        {% endif %}
+                    ">
+                        Priority: {{ task["priority"] }}
+                    </span>
+
+
+                    <span class="status
+                        {% if task['status'] == 'Completed' %}
+                            completed
+                        {% elif task['status'] == 'Overdue' %}
+                            overdue
+                        {% else %}
+                            pending
+                        {% endif %}
+                    ">
+                        {{ task["status"] }}
+                    </span>
+
+
+                    {% if task["status"] != "Completed" %}
+
+                        <br>
+
+                        <a
+                            class="complete-btn"
+                            href="/complete/{{ task['id'] }}"
+                        >
+                            ✓ Mark as Completed
+                        </a>
+
+                    {% endif %}
+
                 </div>
 
-            {% endif %}
+            {% endfor %}
 
-        </div>
+        {% else %}
+
+            <div class="empty">
+
+                <h3>🎯 No action items yet</h3>
+
+                <p>
+                    Upload a meeting recording or enter
+                    meeting notes to create action items.
+                </p>
+
+                <a
+                    class="complete-btn"
+                    href="/upload_audio"
+                >
+                    🎙️ Upload Meeting
+                </a>
+
+            </div>
+
+        {% endif %}
 
     </div>
+
+</div>
 
 </body>
 </html>

@@ -6,11 +6,13 @@ import uuid
 from datetime import datetime
 from faster_whisper import WhisperModel
 
+
 # ============================================================
 # APP
 # ============================================================
 
 app = Flask(__name__)
+
 
 # ============================================================
 # CONFIG
@@ -22,6 +24,37 @@ UPLOAD_FOLDER = "uploads"
 DB_NAME = "meet2action.db"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+
+# ============================================================
+# ALLOWED AUDIO
+# ============================================================
+
+ALLOWED_EXTENSIONS = {
+    ".mp3",
+    ".wav",
+    ".m4a",
+    ".webm",
+    ".ogg",
+    ".mp4",
+    ".mpeg"
+}
+
+
+# ============================================================
+# PEOPLE
+# ============================================================
+
+PEOPLE = [
+    "Dharshan",
+    "Arun",
+    "Kumar",
+    "Mubeen",
+    "Bala",
+    "Pugazhendhi",
+    "Naveen"
+]
+
 
 # ============================================================
 # HEALTH CHECK
@@ -43,9 +76,11 @@ whisper_model = None
 
 
 def get_whisper_model():
+
     global whisper_model
 
     if whisper_model is None:
+
         print("Loading Whisper tiny model...")
 
         whisper_model = WhisperModel(
@@ -79,6 +114,7 @@ def transcribe_audio(file_path):
     transcript_parts = []
 
     for segment in segments:
+
         text = segment.text.strip()
 
         if text:
@@ -149,21 +185,6 @@ def init_db():
 
 
 # ============================================================
-# PEOPLE
-# ============================================================
-
-PEOPLE = [
-    "Dharshan",
-    "Arun",
-    "Kumar",
-    "Mubeen",
-    "Bala",
-    "Pugazhendhi",
-    "Naveen"
-]
-
-
-# ============================================================
 # OWNER DETECTION
 # ============================================================
 
@@ -171,12 +192,16 @@ def detect_owner(text):
 
     text_lower = text.lower()
 
+    # Named person gets highest priority
     for person in PEOPLE:
 
-        if person.lower() in text_lower:
+        if re.search(
+            r"\b" + re.escape(person.lower()) + r"\b",
+            text_lower
+        ):
             return person
 
-    # First-person assignment
+    # First-person commitment
     if re.search(
         r"\b(i will|i'll|i can|i am going to)\b",
         text_lower
@@ -250,7 +275,7 @@ def detect_priority(text):
     medium_words = [
         "soon",
         "this week",
-        "priority"
+        "medium priority"
     ]
 
     for word in medium_words:
@@ -284,14 +309,36 @@ def generate_summary(transcript):
     if not sentences:
         return "No meeting summary available."
 
-    if len(sentences) <= 3:
-        return " ".join(sentences)
-
-    return " ".join(sentences[:3])
+    return " ".join(
+        sentences[:3]
+    )
 
 
 # ============================================================
-# SMART TASK EXTRACTION
+# TASK TEXT NORMALIZATION
+# ============================================================
+
+def normalize_task(text):
+
+    text = text.lower()
+
+    text = re.sub(
+        r"[^a-z0-9\s]",
+        "",
+        text
+    )
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
+
+    return text
+
+
+# ============================================================
+# TASK EXTRACTION
 # ============================================================
 
 def extract_tasks(transcript, meeting_id):
@@ -299,119 +346,11 @@ def extract_tasks(transcript, meeting_id):
     if not transcript:
         return
 
+    # Split transcript into sentences
     sentences = re.split(
         r"(?<=[.!?])\s+",
         transcript.strip()
     )
-
-    # --------------------------------------------------------
-    # Real action phrases
-    # --------------------------------------------------------
-
-    action_patterns = [
-
-        # Personal commitments
-        r"\bi will\b",
-        r"\bi'll\b",
-        r"\bi can\b",
-        r"\bi am going to\b",
-
-        # Team commitments
-        r"\bwe will\b",
-        r"\bwe'll\b",
-        r"\bwe need to\b",
-        r"\bwe have to\b",
-
-        # Assignment / responsibility
-        r"\bassigned to\b",
-        r"\bresponsible for\b",
-        r"\bhas to\b",
-        r"\bhave to\b",
-        r"\bneeds to\b",
-        r"\bneed to\b",
-        r"\bmust\b",
-
-        # Direct actions
-        r"\bprepare\b",
-        r"\bcreate\b",
-        r"\bdevelop\b",
-        r"\bdesign\b",
-        r"\bsubmit\b",
-        r"\bcomplete\b",
-        r"\bfinish\b",
-        r"\btest\b",
-        r"\breview\b",
-        r"\bcheck\b",
-        r"\bsend\b",
-        r"\bupdate\b",
-        r"\borganize\b",
-        r"\bcollect\b",
-        r"\bimplement\b",
-        r"\bbuild\b",
-        r"\bfix\b",
-        r"\bfinalize\b",
-        r"\bpresent\b",
-        r"\bprepare\b",
-        r"\binstall\b",
-        r"\bdeploy\b",
-        r"\bdocument\b"
-    ]
-
-    # --------------------------------------------------------
-    # General / useless statements
-    # --------------------------------------------------------
-
-    blocked_patterns = [
-
-        r"^\s*where\b",
-        r"^\s*what\b",
-        r"^\s*when\b",
-        r"^\s*who\b",
-        r"^\s*why\b",
-        r"^\s*how\b",
-
-        r"\bwhere should\b",
-        r"\bwhat should\b",
-        r"\bwhen should\b",
-        r"\bwhy should\b",
-        r"\bhow should\b",
-
-        r"\bi think\b",
-        r"\bi believe\b",
-        r"\bi feel\b",
-
-        r"\bcommunication will be important\b",
-        r"\bwill be important\b",
-
-        r"\bwe should also update\b",
-        r"\bwe should share updates\b",
-        r"\bshare updates regularly\b",
-
-        r"\bthat gives us enough time\b",
-        r"\benough time to check\b",
-
-        r"\bmake this project successful\b",
-        r"\bmake this project a success\b",
-
-        r"\bstays informed\b",
-        r"\bstay informed\b",
-
-        r"\bwhat should we focus on\b",
-        r"\bwhen should we finish\b"
-    ]
-
-    # --------------------------------------------------------
-    # Words that indicate a question
-    # --------------------------------------------------------
-
-    question_words = [
-        "where",
-        "what",
-        "when",
-        "who",
-        "why",
-        "how"
-    ]
 
     conn = get_db()
     cursor = conn.cursor()
@@ -420,136 +359,279 @@ def extract_tasks(transcript, meeting_id):
 
     for sentence in sentences:
 
-        sentence = sentence.strip()
+        sentence = re.sub(
+            r"\s+",
+            " ",
+            sentence.strip()
+        )
 
         if not sentence:
             continue
 
-        # Normalize spaces
-        sentence = re.sub(
-            r"\s+",
-            " ",
-            sentence
-        ).strip()
-
-        # Too short
+        # Minimum sentence length
         if len(sentence.split()) < 4:
             continue
 
-        sentence_lower = sentence.lower()
+        text = sentence.rstrip(".!?").strip()
+        lower = text.lower()
 
-        # ----------------------------------------------------
-        # NEVER accept questions
-        # ----------------------------------------------------
+        # ====================================================
+        # REJECT QUESTIONS
+        # ====================================================
 
         if "?" in sentence:
             continue
 
-        first_word_match = re.match(
-            r"^\s*([a-zA-Z]+)",
-            sentence_lower
-        )
-
-        if first_word_match:
-
-            first_word = first_word_match.group(1)
-
-            if first_word in question_words:
-                continue
-
-        # ----------------------------------------------------
-        # Block useless/general statements
-        # ----------------------------------------------------
-
-        blocked = False
-
-        for pattern in blocked_patterns:
-
-            if re.search(
-                pattern,
-                sentence_lower
-            ):
-                blocked = True
-                break
-
-        if blocked:
-            continue
-
-        # ----------------------------------------------------
-        # Find action
-        # ----------------------------------------------------
-
-        is_action = False
-
-        for pattern in action_patterns:
-
-            if re.search(
-                pattern,
-                sentence_lower
-            ):
-                is_action = True
-                break
-
-        if not is_action:
-            continue
-
-        # ----------------------------------------------------
-        # Reject vague statements
-        # ----------------------------------------------------
-
-        vague_phrases = [
-            "should be",
-            "will be",
-            "is important",
-            "are important",
-            "enough time",
-            "stay informed",
-            "share updates regularly",
-            "communication will be"
-        ]
-
-        if any(
-            phrase in sentence_lower
-            for phrase in vague_phrases
+        if re.match(
+            r"^(where|what|when|who|why|how)\b",
+            lower
         ):
             continue
 
-        # ----------------------------------------------------
-        # Clean task
-        # ----------------------------------------------------
+        # ====================================================
+        # REJECT NORMAL DISCUSSION
+        # ====================================================
 
-        task_text = sentence.strip()
+        blocked_phrases = [
+
+            # General discussion
+            "great work",
+            "good teamwork",
+            "clear communication",
+            "communication will be",
+            "will be important",
+
+            # Opinion
+            "i think",
+            "i believe",
+            "i feel",
+            "i guess",
+            "i suppose",
+
+            # Generic team statements
+            "we can work together",
+            "work together and finish",
+            "let's start working",
+            "let us start working",
+            "let's get started",
+            "let us get started",
+
+            # Planning discussion
+            "first, we need to divide",
+            "first we need to divide",
+            "we should divide the tasks",
+            "we should share updates",
+            "we should also update",
+
+            # Informational statements
+            "stay informed",
+            "stays informed",
+            "enough time",
+            "gives us enough time",
+            "make this project successful",
+            "make this project a success",
+
+            # Questions accidentally transcribed without ?
+            "when should we finish",
+            "what should we focus",
+            "where should we go",
+            "what should we do",
+            "how should we",
+
+            # Generic completion statements
+            "complete everything",
+            "finish everything",
+            "finish them on time",
+            "finish them by",
+            "complete them on time"
+        ]
+
+        if any(
+            phrase in lower
+            for phrase in blocked_phrases
+        ):
+            continue
+
+        # ====================================================
+        # REJECT SENTENCES STARTING WITH GENERAL WORDS
+        # ====================================================
+
+        if re.match(
+            r"^(yes|no|okay|ok|great|good|sure|right|actually|maybe|probably)\b",
+            lower
+        ):
+            continue
+
+        # ====================================================
+        # EXPLICIT ACTION PATTERNS
+        # ====================================================
+
+        valid_patterns = [
+
+            # Personal commitment
+            r"\bi will\b",
+            r"\bi'll\b",
+            r"\bi can\b",
+            r"\bi am going to\b",
+
+            # Team commitment
+            r"\bwe will\b",
+            r"\bwe'll\b",
+            r"\bwe have to\b",
+            r"\bwe need to\b",
+
+            # Assignment
+            r"\bassigned to\b",
+            r"\bresponsible for\b",
+            r"\bhas to\b",
+            r"\bhave to\b",
+            r"\bneeds to\b",
+            r"\bneed to\b",
+            r"\bmust\b",
+
+            # Direct action
+            r"\bprepare\b",
+            r"\bcreate\b",
+            r"\bdevelop\b",
+            r"\bdesign\b",
+            r"\bsubmit\b",
+            r"\btest\b",
+            r"\breview\b",
+            r"\bsend\b",
+            r"\borganize\b",
+            r"\bcollect\b",
+            r"\bimplement\b",
+            r"\bbuild\b",
+            r"\bfix\b",
+            r"\bfinalize\b",
+            r"\bpresent\b",
+            r"\binstall\b",
+            r"\bdeploy\b",
+            r"\bdocument\b"
+        ]
+
+        if not any(
+            re.search(pattern, lower)
+            for pattern in valid_patterns
+        ):
+            continue
+
+        # ====================================================
+        # REJECT VAGUE "SHOULD/WILL BE"
+        # ====================================================
+
+        if re.search(
+            r"\b(should|would|could|will)\s+be\b",
+            lower
+        ):
+            continue
+
+        if re.search(
+            r"\b(is|are)\s+important\b",
+            lower
+        ):
+            continue
+
+        # ====================================================
+        # CLEAN COMMITMENT PREFIX
+        # ====================================================
+
+        task_text = text
+
+        prefixes = [
+            r"^i will\s+",
+            r"^i'll\s+",
+            r"^i can\s+",
+            r"^i am going to\s+",
+            r"^we will\s+",
+            r"^we'll\s+"
+        ]
+
+        for prefix in prefixes:
+
+            task_text = re.sub(
+                prefix,
+                "",
+                task_text,
+                flags=re.IGNORECASE
+            ).strip()
+
+        # ====================================================
+        # DO NOT TURN GENERIC "LET'S" INTO TASK
+        # ====================================================
+
+        if lower.startswith("let's "):
+
+            action = lower[7:].strip()
+
+            if action in [
+                "start working",
+                "get started",
+                "work together",
+                "complete everything by friday afternoon"
+            ]:
+                continue
+
+            # Only allow clearly specific actions
+            if not re.match(
+                r"^(prepare|create|develop|design|submit|test|review|send|organize|collect|implement|build|fix|finalize|present|install|deploy|document)\b",
+                action
+            ):
+                continue
+
+            task_text = re.sub(
+                r"^let's\s+",
+                "",
+                task_text,
+                flags=re.IGNORECASE
+            ).strip()
+
+        # ====================================================
+        # CLEAN TASK
+        # ====================================================
 
         task_text = task_text.rstrip(
             ".!?"
-        )
+        ).strip()
 
         if not task_text:
             continue
 
-        # ----------------------------------------------------
-        # Prevent duplicate tasks
-        # ----------------------------------------------------
+        if len(task_text.split()) < 3:
+            continue
 
-        normalized_task = re.sub(
-            r"[^a-z0-9\s]",
-            "",
-            task_text.lower()
+        # ====================================================
+        # REJECT GENERIC TASK TEXT
+        # ====================================================
+
+        generic_tasks = [
+            "complete everything",
+            "finish everything",
+            "start working",
+            "get started",
+            "work together",
+            "finish them on time",
+            "finish them",
+            "complete them"
+        ]
+
+        if normalize_task(task_text) in generic_tasks:
+            continue
+
+        # ====================================================
+        # DUPLICATE PROTECTION
+        # ====================================================
+
+        normalized = normalize_task(
+            task_text
         )
 
-        normalized_task = re.sub(
-            r"\s+",
-            " ",
-            normalized_task
-        ).strip()
-
-        if not normalized_task:
+        if not normalized:
             continue
 
-        if normalized_task in inserted_tasks:
+        if normalized in inserted_tasks:
             continue
 
-        # Check duplicate inside same meeting
         cursor.execute("""
             SELECT id
             FROM tasks
@@ -564,29 +646,19 @@ def extract_tasks(transcript, meeting_id):
         if cursor.fetchone():
             continue
 
-        inserted_tasks.add(
-            normalized_task
-        )
+        # ====================================================
+        # METADATA
+        # ====================================================
 
-        # ----------------------------------------------------
-        # Extract metadata
-        # ----------------------------------------------------
+        owner = detect_owner(text)
 
-        owner = detect_owner(
-            task_text
-        )
+        deadline = detect_deadline(text)
 
-        deadline = detect_deadline(
-            task_text
-        )
+        priority = detect_priority(text)
 
-        priority = detect_priority(
-            task_text
-        )
-
-        # ----------------------------------------------------
-        # Insert task
-        # ----------------------------------------------------
+        # ====================================================
+        # INSERT
+        # ====================================================
 
         cursor.execute("""
             INSERT INTO tasks
@@ -608,12 +680,20 @@ def extract_tasks(transcript, meeting_id):
             "Pending"
         ))
 
+        inserted_tasks.add(
+            normalized
+        )
+
     conn.commit()
     conn.close()
 
+    print(
+        f"Task extraction completed for meeting {meeting_id}."
+    )
+
 
 # ============================================================
-# CLEAN OLD JUNK TASKS
+# CLEAN OLD JUNK + DUPLICATES
 # ============================================================
 
 def cleanup_old_tasks():
@@ -621,58 +701,115 @@ def cleanup_old_tasks():
     conn = get_db()
     cursor = conn.cursor()
 
-    # Remove obvious questions
+    # ========================================================
+    # REMOVE QUESTIONS
+    # ========================================================
+
     cursor.execute("""
         DELETE FROM tasks
         WHERE
-            TRIM(task) LIKE 'Where %'
-            OR TRIM(task) LIKE 'What %'
-            OR TRIM(task) LIKE 'When %'
-            OR TRIM(task) LIKE 'Who %'
-            OR TRIM(task) LIKE 'Why %'
-            OR TRIM(task) LIKE 'How %'
+            LOWER(TRIM(task)) LIKE 'where %'
+            OR LOWER(TRIM(task)) LIKE 'what %'
+            OR LOWER(TRIM(task)) LIKE 'when %'
+            OR LOWER(TRIM(task)) LIKE 'who %'
+            OR LOWER(TRIM(task)) LIKE 'why %'
+            OR LOWER(TRIM(task)) LIKE 'how %'
     """)
 
-    # Remove obvious general statements
+    # ========================================================
+    # REMOVE KNOWN JUNK
+    # ========================================================
+
     junk_phrases = [
+
+        "great work",
+        "good teamwork",
+        "clear communication",
         "communication will be important",
-        "we should share updates regularly",
-        "we should also update the team about our progress",
-        "that gives us enough time to check our work",
-        "we'll make sure everyone stays informed",
-        "we should share updates regularly",
-        "make this project successful"
+        "will be important",
+
+        "i think",
+        "i believe",
+        "i feel",
+
+        "let's start working",
+        "let us start working",
+
+        "we can work together",
+        "work together and finish",
+
+        "first, we need to divide",
+        "first we need to divide",
+
+        "we should share updates",
+        "we should also update",
+
+        "stay informed",
+        "stays informed",
+
+        "enough time",
+        "gives us enough time",
+
+        "make this project successful",
+        "make this project a success",
+
+        "complete everything",
+        "finish everything",
+        "finish them on time",
+
+        "when should we finish",
+        "what should we focus",
+        "where should we go",
+        "what should we do",
+        "how should we"
     ]
 
     for phrase in junk_phrases:
 
         cursor.execute("""
             DELETE FROM tasks
-            WHERE LOWER(task) LIKE ?
+            WHERE LOWER(TRIM(task)) LIKE ?
         """, (
             "%" + phrase.lower() + "%",
         ))
 
-    # --------------------------------------------------------
-    # Remove exact duplicate tasks within the same meeting
-    # Keep newest task.
-    # --------------------------------------------------------
+    # ========================================================
+    # REMOVE GENERIC SENTENCES
+    # ========================================================
+
+    cursor.execute("""
+        DELETE FROM tasks
+        WHERE LOWER(TRIM(task)) IN (
+            'start working',
+            'get started',
+            'work together',
+            'finish them',
+            'complete them',
+            'finish them on time',
+            'complete everything',
+            'finish everything'
+        )
+    """)
+
+    # ========================================================
+    # GLOBAL EXACT DUPLICATE CLEANUP
+    # ========================================================
+    # Keeps newest copy of exactly same task.
+    # ========================================================
 
     cursor.execute("""
         DELETE FROM tasks
         WHERE id NOT IN (
             SELECT MAX(id)
             FROM tasks
-            GROUP BY
-                meeting_id,
-                LOWER(TRIM(task))
+            GROUP BY LOWER(TRIM(task))
         )
     """)
 
     conn.commit()
     conn.close()
 
-    print("Old junk/duplicate tasks cleaned.")
+    print("Old junk and duplicate tasks cleaned.")
 
 
 # ============================================================
@@ -690,7 +827,10 @@ def detect_participants(transcript):
 
     for person in PEOPLE:
 
-        if person.lower() in transcript_lower:
+        if re.search(
+            r"\b" + re.escape(person.lower()) + r"\b",
+            transcript_lower
+        ):
             participants.append(person)
 
     return participants
@@ -747,17 +887,7 @@ def upload_audio():
         file.filename
     )[1].lower()
 
-    allowed_extensions = [
-        ".mp3",
-        ".wav",
-        ".m4a",
-        ".webm",
-        ".ogg",
-        ".mp4",
-        ".mpeg"
-    ]
-
-    if extension not in allowed_extensions:
+    if extension not in ALLOWED_EXTENSIONS:
 
         return (
             "Unsupported audio format.",
@@ -781,8 +911,6 @@ def upload_audio():
         file.save(file_path)
 
         print("Audio saved.")
-
-        print("Starting transcription...")
 
         transcript = transcribe_audio(
             file_path
@@ -811,6 +939,7 @@ def upload_audio():
         )
 
         conn = get_db()
+
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -838,7 +967,6 @@ def upload_audio():
         conn.commit()
         conn.close()
 
-        # Create smart action items
         extract_tasks(
             transcript,
             meeting_id
@@ -873,7 +1001,7 @@ def upload_audio():
 
 
 # ============================================================
-# MANUAL MEETING / ANALYZE
+# MANUAL MEETING
 # ============================================================
 
 @app.route(
@@ -895,7 +1023,7 @@ def meeting():
 
     title = request.form.get(
         "title",
-        "Audio Meeting"
+        "Meeting"
     ).strip()
 
     participants = request.form.get(
@@ -912,7 +1040,7 @@ def meeting():
 
     if not title:
 
-        title = "Audio Meeting"
+        title = "Meeting"
 
     if not participants:
 
@@ -930,6 +1058,7 @@ def meeting():
     )
 
     conn = get_db()
+
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -1024,7 +1153,10 @@ def update_owner(task_id):
     owner = request.form.get(
         "owner",
         "Unassigned"
-    )
+    ).strip()
+
+    if not owner:
+        owner = "Unassigned"
 
     conn = get_db()
 
@@ -1095,11 +1227,23 @@ def dashboard():
         WHERE status = 'Completed'
     """).fetchone()[0]
 
-    # Basic overdue calculation
-    overdue_tasks = 0
+    # Future improvement:
+    # Calculate real date-based overdue tasks.
+    overdue_tasks = conn.execute("""
+        SELECT COUNT(*)
+        FROM tasks
+        WHERE status = 'Overdue'
+    """).fetchone()[0]
 
     tasks = conn.execute("""
-        SELECT *
+        SELECT
+            id,
+            meeting_id,
+            task,
+            owner,
+            deadline,
+            priority,
+            status
         FROM tasks
         ORDER BY id DESC
         LIMIT 50
@@ -1216,17 +1360,7 @@ def analyze():
         file.filename
     )[1].lower()
 
-    allowed_extensions = [
-        ".mp3",
-        ".wav",
-        ".m4a",
-        ".webm",
-        ".ogg",
-        ".mp4",
-        ".mpeg"
-    ]
-
-    if extension not in allowed_extensions:
+    if extension not in ALLOWED_EXTENSIONS:
 
         return (
             "Unsupported audio format.",
@@ -1279,6 +1413,7 @@ def analyze():
         )
 
         conn = get_db()
+
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -1378,7 +1513,6 @@ def internal_error(error):
 
 init_db()
 
-# Clean old junk tasks when app starts
 try:
     cleanup_old_tasks()
 except Exception as e:
